@@ -7,19 +7,20 @@ from jinja2 import Template
 import time
 
 class FrameIOFeedbackExporter:
-    def __init__(self, token):
+ def __init__(self, token):
         self.token = token
         self.base_url = "https://api.frame.io/v2"
         self.headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
-        self.request_delay = 1.0  # 1 second delay between requests
+        self.request_delay = 2.0      # 2 seconds between requests
         self.max_retries = 5
-        self.retry_delay = 5  # 5 seconds initial retry delay
-        self.batch_size = 10  # Process comments in batches
+        self.retry_delay = 10         # 10 seconds initial retry delay
+        self.batch_size = 5           # Process only 5 assets at a time
+        self.batch_delay = 15         # 15 seconds between batches
 
-    def make_request(self, url, method='GET'):
+  def make_request(self, url, method='GET'):
         """Make a rate-limited request with retries"""
         for attempt in range(self.max_retries):
             try:
@@ -31,13 +32,13 @@ class FrameIOFeedbackExporter:
                 if e.response.status_code == 429:  # Too Many Requests
                     if attempt < self.max_retries - 1:
                         wait_time = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                        st.write(f"Rate limit hit, waiting {wait_time} seconds...")
+                        st.write(f"Rate limit hit, waiting {wait_time} seconds before retry {attempt + 1}/{self.max_retries}")
                         time.sleep(wait_time)
                         continue
                 raise
             except requests.exceptions.RequestException as e:
                 if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
+                    wait_time = self.retry_delay
                     st.write(f"Request failed, retrying in {wait_time} seconds... ({attempt + 1}/{self.max_retries})")
                     time.sleep(wait_time)
                     continue
@@ -179,26 +180,34 @@ class FrameIOFeedbackExporter:
         st.write(f"\nTotal assets found: {len(all_assets)}")
         return all_assets
 
-   def generate_report(self, project_id):
+  def generate_report(self, project_id):
         """Generate an HTML report of all comments"""
         assets = self.get_all_assets(project_id)
         feedback_data = []
         
-        # Process assets in batches
+        # Process assets in small batches
         total_batches = (len(assets) + self.batch_size - 1) // self.batch_size
         
         # Progress bar for asset processing
         progress_bar = st.progress(0)
+        st.write(f"Processing {len(assets)} assets in {total_batches} batches")
         
         for batch_idx in range(total_batches):
             start_idx = batch_idx * self.batch_size
             end_idx = min((batch_idx + 1) * self.batch_size, len(assets))
             batch = assets[start_idx:end_idx]
             
-            st.write(f"Processing batch {batch_idx + 1}/{total_batches} ({start_idx + 1}-{end_idx} of {len(assets)} assets)")
+            st.write(f"\nStarting batch {batch_idx + 1}/{total_batches} ({start_idx + 1}-{end_idx} of {len(assets)} assets)")
             
             for asset_idx, asset in enumerate(batch):
+                asset_name = asset.get('name', 'Unnamed Asset')
+                st.write(f"Processing asset: {asset_name}")
+                
                 try:
+                    # Add extra delay between each asset within batch
+                    if asset_idx > 0:
+                        time.sleep(self.request_delay)
+                    
                     comments = self.get_asset_comments(asset['id'])
                     if comments:
                         processed_comments = []
@@ -215,29 +224,31 @@ class FrameIOFeedbackExporter:
                                     'timestamp_raw': created_at
                                 })
                             except Exception as e:
-                                st.write(f"Skipping comment due to error: {str(e)}")
+                                st.write(f"Skipping comment in {asset_name} due to error: {str(e)}")
                                 continue
                         
                         if processed_comments:
                             feedback_data.append({
-                                'asset_name': asset.get('name', 'Unnamed Asset'),
+                                'asset_name': asset_name,
                                 'asset_type': asset.get('type', 'unknown'),
                                 'thumbnail_url': asset.get('thumbnail_url', ''),
                                 'asset_url': f"https://app.frame.io/presentation/{project_id}?item={asset['id']}",
                                 'comments': processed_comments
                             })
+                            st.write(f"Added {len(processed_comments)} comments from {asset_name}")
                 except Exception as e:
-                    st.error(f"Error processing asset {asset.get('name', 'Unnamed')}: {str(e)}")
+                    st.error(f"Error processing asset {asset_name}: {str(e)}")
+                    time.sleep(self.retry_delay)  # Wait after error
                     continue
                 
                 # Update progress
                 overall_progress = (batch_idx * self.batch_size + asset_idx + 1) / len(assets)
                 progress_bar.progress(overall_progress)
             
-            # Add extra delay between batches
+            # Add longer delay between batches
             if batch_idx < total_batches - 1:
-                st.write("Waiting between batches...")
-                time.sleep(self.retry_delay)
+                st.write(f"\nCompleted batch {batch_idx + 1}. Waiting {self.batch_delay} seconds before next batch...")
+                time.sleep(self.batch_delay)
         
         # Sort feedback by most recent comment
         if feedback_data:
