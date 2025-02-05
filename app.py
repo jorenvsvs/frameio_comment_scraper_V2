@@ -263,19 +263,89 @@ def __init__(self, token):
         <head>
             <title>Frame.io Feedback Report</title>
             <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                .asset { border: 1px solid #ddd; margin: 20px 0; padding: 20px; border-radius: 5px; }
-                .asset-header { display: flex; align-items: center; margin-bottom: 15px; }
-                .thumbnail { width: 150px; height: 84px; object-fit: cover; margin-right: 20px; }
-                .asset-info { flex-grow: 1; }
-                .asset-name { font-size: 1.2em; font-weight: bold; margin: 0; }
-                .asset-link { color: #0066cc; text-decoration: none; }
-                .comments { margin-top: 15px; }
-                .comment { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 3px; }
-                .comment-meta { color: #666; font-size: 0.9em; margin-bottom: 5px; }
-                .summary { background: #eef; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+                body { 
+                    font-family: Arial, sans-serif; 
+                    margin: 20px;
+                    background: #f5f5f5;
+                }
+                .asset { 
+                    border: 1px solid #ddd; 
+                    margin: 20px 0; 
+                    padding: 20px; 
+                    border-radius: 8px;
+                    background: white;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .asset-header { 
+                    display: flex; 
+                    align-items: flex-start; 
+                    margin-bottom: 15px;
+                    gap: 20px;
+                }
+                .thumbnail-container {
+                    flex-shrink: 0;
+                    width: 200px;
+                    height: 112px;
+                    background: #f0f0f0;
+                    border-radius: 4px;
+                    overflow: hidden;
+                }
+                .thumbnail { 
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    object-position: center;
+                }
+                .asset-info { 
+                    flex-grow: 1;
+                }
+                .asset-name { 
+                    font-size: 1.2em; 
+                    font-weight: bold; 
+                    margin: 0 0 8px 0;
+                }
+                .asset-type {
+                    color: #666;
+                    font-size: 0.9em;
+                    margin-bottom: 8px;
+                }
+                .asset-link { 
+                    color: #0066cc; 
+                    text-decoration: none;
+                    display: inline-block;
+                    padding: 4px 8px;
+                    background: #f0f5ff;
+                    border-radius: 4px;
+                }
+                .asset-link:hover {
+                    background: #e0ebff;
+                }
+                .comments { 
+                    margin-top: 15px;
+                }
+                .comment { 
+                    background: #f8f8f8; 
+                    padding: 12px; 
+                    margin: 10px 0; 
+                    border-radius: 6px;
+                    border-left: 4px solid #ddd;
+                }
+                .comment-meta { 
+                    color: #666; 
+                    font-size: 0.9em; 
+                    margin-bottom: 8px;
+                }
+                .summary { 
+                    background: #eef2ff;
+                    padding: 20px;
+                    margin-bottom: 30px;
+                    border-radius: 8px;
+                    border: 1px solid #dde5ff;
+                }
                 @media print {
                     .asset { break-inside: avoid; }
+                    body { background: white; }
+                    .asset { box-shadow: none; }
                 }
             </style>
         </head>
@@ -289,12 +359,15 @@ def __init__(self, token):
             {% for asset in feedback_data %}
             <div class="asset">
                 <div class="asset-header">
-                    {% if asset.thumbnail_url %}
-                    <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
-                    {% endif %}
+                    <div class="thumbnail-container">
+                        {% if asset.thumbnail_url %}
+                        <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
+                        {% endif %}
+                    </div>
                     <div class="asset-info">
                         <h2 class="asset-name">{{ asset.asset_name }}</h2>
-                        <p><a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a></p>
+                        <div class="asset-type">Type: {{ asset.asset_type }}</div>
+                        <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
                     </div>
                 </div>
                 <div class="comments">
