@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 import base64
 from jinja2 import Template
+import time
 
 class FrameIOFeedbackExporter:
     def __init__(self, token):
@@ -13,63 +14,72 @@ class FrameIOFeedbackExporter:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
-    
+        self.request_delay = 0.5  # 500ms delay between requests
+        self.max_retries = 3
+        self.retry_delay = 2  # seconds to wait after hitting rate limit
+
+    def make_request(self, url, method='GET'):
+        """Make a rate-limited request with retries"""
+        for attempt in range(self.max_retries):
+            try:
+                time.sleep(self.request_delay)  # Rate limiting delay
+                response = requests.request(method, url, headers=self.headers)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:  # Too Many Requests
+                    if attempt < self.max_retries - 1:  # Don't sleep on last attempt
+                        st.write(f"Rate limit hit, waiting {self.retry_delay} seconds...")
+                        time.sleep(self.retry_delay)
+                        self.retry_delay *= 2  # Exponential backoff
+                        continue
+                raise
+            except requests.exceptions.RequestException as e:
+                if attempt < self.max_retries - 1:
+                    st.write(f"Request failed, retrying... ({attempt + 1}/{self.max_retries})")
+                    time.sleep(self.retry_delay)
+                    continue
+                raise
+
     def get_teams(self):
         """Fetch all accessible teams"""
-        url = f"{self.base_url}/teams"
         try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
+            return self.make_request(f"{self.base_url}/teams")
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching teams: {str(e)}")
             return []
 
     def get_team_projects(self, team_id):
         """Fetch all projects for a team"""
-        url = f"{self.base_url}/teams/{team_id}/projects"
         try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
+            return self.make_request(f"{self.base_url}/teams/{team_id}/projects")
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching team projects: {str(e)}")
             return []
 
     def get_review_links(self, project_id):
         """Get review links for a project"""
-        url = f"{self.base_url}/projects/{project_id}/review_links"
         try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            review_links = response.json()
+            review_links = self.make_request(f"{self.base_url}/projects/{project_id}/review_links")
             st.write(f"Found {len(review_links)} review links in project")
             return review_links
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching review links: {str(e)}")
-            st.write(f"Response status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
-            st.write(f"Response content: {e.response.content if hasattr(e, 'response') else 'unknown'}")
             return []
 
     def get_item_details(self, item_id):
         """Get detailed information about an item"""
-        url = f"{self.base_url}/assets/{item_id}"
         try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            item_details = response.json()
+            item_details = self.make_request(f"{self.base_url}/assets/{item_id}")
             st.write(f"Got details for item: {item_details.get('name', 'Unnamed')} (Type: {item_details.get('type', 'unknown')})")
             return item_details
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching item details: {str(e)}")
-            st.write(f"Response status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
-            st.write(f"Response content: {e.response.content if hasattr(e, 'response') else 'unknown'}")
             return None
 
     def get_folder_contents(self, folder_id):
         """Get contents of a folder"""
         st.write(f"Getting contents of folder {folder_id}")
-        # Try different endpoints to get folder contents
         endpoints = [
             f"{self.base_url}/assets/{folder_id}/items",
             f"{self.base_url}/assets/{folder_id}/children",
@@ -80,15 +90,10 @@ class FrameIOFeedbackExporter:
         for endpoint in endpoints:
             try:
                 st.write(f"Trying endpoint: {endpoint}")
-                response = requests.get(endpoint, headers=self.headers)
-                response.raise_for_status()
-                items = response.json()
+                items = self.make_request(endpoint)
                 st.write(f"Success! Found {len(items)} items")
-                for item in items:
-                    st.write(f"Item in folder: {item.get('name', 'Unnamed')} (Type: {item.get('type', 'unknown')})")
                 return items
-            except requests.exceptions.RequestException as e:
-                st.write(f"Endpoint {endpoint} failed: {str(e)}")
+            except requests.exceptions.RequestException:
                 continue
         
         st.error(f"All attempts to get folder contents failed for folder {folder_id}")
@@ -118,17 +123,15 @@ class FrameIOFeedbackExporter:
         st.write(f"Found {len(assets)} assets in folder {folder_name}")
         return assets
 
-    def get_review_link_items(self, review_link_id):
-        """Get items in a review link"""
-        url = f"{self.base_url}/review_links/{review_link_id}/items"
+    def get_asset_comments(self, asset_id):
+        """Fetch all comments for an asset"""
         try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            items = response.json()
-            st.write(f"Found {len(items)} items in review link")
-            return items
+            comments = self.make_request(f"{self.base_url}/assets/{asset_id}/comments")
+            if comments:
+                st.write(f"Found {len(comments)} comments for asset {asset_id}")
+            return comments
         except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching review link items: {str(e)}")
+            st.error(f"Error fetching comments: {str(e)}")
             return []
 
     def get_all_assets(self, project_id):
@@ -146,42 +149,33 @@ class FrameIOFeedbackExporter:
             st.write(f"\nProcessing review link: {review_name}")
             
             # Get items in review link
-            items = self.get_review_link_items(review_link_id)
-            
-            # Process each item
-            for item in items:
-                asset_id = item.get('asset_id')
-                if asset_id:
-                    st.write(f"\nChecking asset: {asset_id}")
-                    # Get asset details
-                    asset_details = self.get_item_details(asset_id)
-                    if asset_details:
-                        if asset_details.get('type') == 'folder':
-                            st.write(f"Processing folder: {asset_details.get('name')}")
-                            folder_assets = self.process_folder(asset_id, asset_details.get('name'))
-                            if folder_assets:
-                                st.write(f"Adding {len(folder_assets)} assets from folder")
-                                all_assets.extend(folder_assets)
-                        else:
-                            st.write("Adding single asset")
-                            all_assets.append(asset_details)
+            url = f"{self.base_url}/review_links/{review_link_id}/items"
+            try:
+                items = self.make_request(url)
+                st.write(f"Found {len(items)} items in review link")
+                
+                # Process each item
+                for item in items:
+                    asset_id = item.get('asset_id')
+                    if asset_id:
+                        st.write(f"\nChecking asset: {asset_id}")
+                        # Get asset details
+                        asset_details = self.get_item_details(asset_id)
+                        if asset_details:
+                            if asset_details.get('type') == 'folder':
+                                st.write(f"Processing folder: {asset_details.get('name')}")
+                                folder_assets = self.process_folder(asset_id, asset_details.get('name'))
+                                if folder_assets:
+                                    st.write(f"Adding {len(folder_assets)} assets from folder")
+                                    all_assets.extend(folder_assets)
+                            else:
+                                st.write("Adding single asset")
+                                all_assets.append(asset_details)
+            except requests.exceptions.RequestException as e:
+                st.error(f"Error processing review link: {str(e)}")
         
         st.write(f"\nTotal assets found: {len(all_assets)}")
         return all_assets
-
-    def get_asset_comments(self, asset_id):
-        """Fetch all comments for an asset"""
-        url = f"{self.base_url}/assets/{asset_id}/comments"
-        try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            comments = response.json()
-            if comments:
-                st.write(f"Found {len(comments)} comments for asset {asset_id}")
-            return comments
-        except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching comments: {str(e)}")
-            return []
 
     def generate_report(self, project_id):
         """Generate an HTML report of all comments"""
@@ -349,7 +343,4 @@ def main():
                                 st.write("### Preview:")
                                 st.components.v1.html(html_content, height=600, scrolling=True)
         except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
-
-if __name__ == "__main__":
-    main()
+            st.error(f"An error occurred:
