@@ -18,9 +18,9 @@ class FrameIOFeedbackExporter:
         }
         self.request_delay = 2.0     # 10 seconds between requests
         self.max_retries = 3
-        self.retry_delay = 20         # 1 minute initial retry delay
+        self.retry_delay = 10         # 1 minute initial retry delay
         self.chunk_size = 20          # Process 10 assets at a time
-        self.chunk_delay = 60        # 5 minutes between chunks
+        self.chunk_delay = 20        # 5 minutes between chunks
 
     def save_progress(self, project_id, feedback_data, processed_ids):
         """Save current progress to a file"""
