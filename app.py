@@ -5,44 +5,59 @@ import json
 import base64
 from jinja2 import Template
 import time
+import pickle
+import os
 
 class FrameIOFeedbackExporter:
-def __init__(self, token):
+    def __init__(self, token):
         self.token = token
         self.base_url = "https://api.frame.io/v2"
         self.headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
-        self.request_delay = 5.0      # 5 seconds between requests
-        self.max_retries = 8          # More retries
-        self.retry_delay = 30         # 30 seconds initial retry delay
-        self.batch_size = 1           # Process only one asset at a time
-        self.batch_delay = 30         # 30 seconds between assets
+        self.request_delay = 10.0     # 10 seconds between requests
+        self.max_retries = 3
+        self.retry_delay = 60         # 1 minute initial retry delay
+        self.chunk_size = 10          # Process 10 assets at a time
+        self.chunk_delay = 300        # 5 minutes between chunks
 
-  def make_request(self, url, method='GET'):
-        """Make a rate-limited request with retries and exponential backoff"""
+    def save_progress(self, project_id, feedback_data, processed_ids):
+        """Save current progress to a file"""
+        data = {
+            'feedback_data': feedback_data,
+            'processed_ids': processed_ids,
+            'timestamp': datetime.now().isoformat()
+        }
+        with open(f'frameio_progress_{project_id}.pkl', 'wb') as f:
+            pickle.dump(data, f)
+
+    def load_progress(self, project_id):
+        """Load previous progress if it exists"""
+        try:
+            with open(f'frameio_progress_{project_id}.pkl', 'rb') as f:
+                data = pickle.load(f)
+                st.write("Found previous progress. Resuming...")
+                return data['feedback_data'], data['processed_ids']
+        except:
+            return [], set()
+
+    def make_request(self, url, method='GET'):
+        """Make a rate-limited request with retries"""
         for attempt in range(self.max_retries):
             try:
-                time.sleep(self.request_delay)  # Rate limiting delay
+                time.sleep(self.request_delay)
                 response = requests.request(method, url, headers=self.headers)
                 response.raise_for_status()
                 return response.json()
             except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 429:  # Too Many Requests
-                    if attempt < self.max_retries - 1:
-                        wait_time = self.retry_delay * (3 ** attempt)  # More aggressive exponential backoff
-                        st.write(f"Rate limit hit, waiting {wait_time} seconds before retry {attempt + 1}/{self.max_retries}")
-                        time.sleep(wait_time)
-                        continue
-                raise
-            except requests.exceptions.RequestException as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    st.write(f"Request failed, retrying in {wait_time} seconds... ({attempt + 1}/{self.max_retries})")
+                if e.response.status_code == 429 and attempt < self.max_retries - 1:
+                    wait_time = self.retry_delay * (4 ** attempt)
+                    st.write(f"Rate limit hit. Waiting {wait_time} seconds...")
                     time.sleep(wait_time)
                     continue
                 raise
+        return None
 
     def get_teams(self):
         """Fetch all accessible teams"""
@@ -101,6 +116,17 @@ def __init__(self, token):
         
         st.error(f"All attempts to get folder contents failed for folder {folder_id}")
         return []
+
+    def get_asset_preview(self, asset_id):
+        """Get preview/thumbnail URL for an asset"""
+        try:
+            url = f"{self.base_url}/assets/{asset_id}/preview"
+            preview_data = self.make_request(url)
+            if preview_data and 'url' in preview_data:
+                return preview_data['url']
+        except Exception as e:
+            st.write(f"Error fetching preview for asset {asset_id}: {str(e)}")
+        return None
 
     def process_folder(self, folder_id, folder_name=""):
         """Recursively process a folder and its contents"""
@@ -180,78 +206,86 @@ def __init__(self, token):
         st.write(f"\nTotal assets found: {len(all_assets)}")
         return all_assets
 
-  def generate_report(self, project_id):
+    def generate_report(self, project_id):
         """Generate an HTML report of all comments"""
         assets = self.get_all_assets(project_id)
-        feedback_data = []
-        failed_assets = []
         
-        total_assets = len(assets)
-        st.write(f"Processing {total_assets} assets one at a time")
+        # Load previous progress if any
+        feedback_data, processed_ids = self.load_progress(project_id)
         
-        # Progress bar for asset processing
-        progress_bar = st.progress(0)
+        # Filter out already processed assets
+        assets_to_process = [a for a in assets if a['id'] not in processed_ids]
         
-        for idx, asset in enumerate(assets, 1):
-            asset_name = asset.get('name', 'Unnamed Asset')
-            st.write(f"\nProcessing asset {idx}/{total_assets}: {asset_name}")
+        total_assets = len(assets_to_process)
+        st.write(f"Processing {total_assets} remaining assets in chunks of {self.chunk_size}")
+        
+        progress_bar = st.progress(len(processed_ids) / len(assets))
+        
+        # Process assets in chunks
+        for chunk_start in range(0, total_assets, self.chunk_size):
+            chunk = assets_to_process[chunk_start:chunk_start + self.chunk_size]
+            st.write(f"\nProcessing chunk {chunk_start//self.chunk_size + 1} of {(total_assets + self.chunk_size - 1)//self.chunk_size}")
             
-            try:
-                # Always wait between assets
-                if idx > 1:
-                    wait_msg = f"Waiting {self.batch_delay} seconds before processing next asset..."
-                    st.write(wait_msg)
-                    time.sleep(self.batch_delay)
-                
-                comments = self.get_asset_comments(asset['id'])
-                if comments:
-                    processed_comments = []
-                    for comment in comments:
-                        try:
-                            author_name = comment.get('author', {}).get('name', 'Unknown User')
-                            comment_text = comment.get('text', 'No comment text')
-                            created_at = comment.get('created_at', datetime.now().isoformat())
+            # Process each asset in the chunk
+            for asset in chunk:
+                try:
+                    comments = self.get_asset_comments(asset['id'])
+                    if comments:
+                        processed_comments = []
+                        for comment in comments:
+                            try:
+                                author_name = comment.get('author', {}).get('name', 'Unknown User')
+                                comment_text = comment.get('text', 'No comment text')
+                                created_at = comment.get('created_at', datetime.now().isoformat())
+                                
+                                processed_comments.append({
+                                    'text': comment_text,
+                                    'author': author_name,
+                                    'timestamp': datetime.fromisoformat(created_at).strftime('%Y-%m-%d %H:%M'),
+                                    'timestamp_raw': created_at
+                                })
+                            except Exception as e:
+                                st.write(f"Error processing comment: {str(e)}")
+                                continue
+                        
+                        if processed_comments:
+                            # Get preview URL for the asset
+                            preview_url = self.get_asset_preview(asset['id'])
                             
-                            processed_comments.append({
-                                'text': comment_text,
-                                'author': author_name,
-                                'timestamp': datetime.fromisoformat(created_at).strftime('%Y-%m-%d %H:%M'),
-                                'timestamp_raw': created_at
+                            feedback_data.append({
+                                'asset_name': asset.get('name', 'Unnamed Asset'),
+                                'asset_type': asset.get('type', 'unknown'),
+                                'thumbnail_url': preview_url,
+                                'asset_url': f"https://app.frame.io/presentation/{project_id}?item={asset['id']}",
+                                'comments': processed_comments
                             })
-                        except Exception as e:
-                            st.write(f"Skipping comment in {asset_name} due to error: {str(e)}")
-                            continue
                     
-                    if processed_comments:
-                        feedback_data.append({
-                            'asset_name': asset_name,
-                            'asset_type': asset.get('type', 'unknown'),
-                            'thumbnail_url': asset.get('thumbnail_url', ''),
-                            'asset_url': f"https://app.frame.io/presentation/{project_id}?item={asset['id']}",
-                            'comments': processed_comments
-                        })
-                        st.write(f"Successfully processed {len(processed_comments)} comments from {asset_name}")
-            except Exception as e:
-                st.error(f"Error processing asset {asset_name}: {str(e)}")
-                failed_assets.append((asset_name, str(e)))
-                time.sleep(self.retry_delay)  # Wait after error
-                continue
-            finally:
-                # Update progress
-                progress_bar.progress(idx / total_assets)
+                    processed_ids.add(asset['id'])
+                    # Save progress after each asset
+                    self.save_progress(project_id, feedback_data, processed_ids)
+                    
+                except Exception as e:
+                    st.error(f"Error processing asset {asset.get('name', 'Unnamed')}: {str(e)}")
+                    continue
+                
+                progress_bar.progress(len(processed_ids) / len(assets))
+            
+            # After each chunk, take a long break
+            if chunk_start + self.chunk_size < total_assets:
+                st.write(f"Chunk complete. Waiting {self.chunk_delay} seconds before next chunk...")
+                time.sleep(self.chunk_delay)
         
-        # Report failed assets
-        if failed_assets:
-            st.write("\nFailed to process the following assets:")
-            for asset_name, error in failed_assets:
-                st.write(f"- {asset_name}: {error}")
-        
-        # Sort feedback by most recent comment
         if feedback_data:
             feedback_data.sort(
                 key=lambda x: max([c['timestamp_raw'] for c in x['comments']], default=''),
                 reverse=True
             )
+        
+        # Clean up progress file
+        try:
+            os.remove(f'frameio_progress_{project_id}.pkl')
+        except:
+            pass
         
         return self.render_html_report(feedback_data)
 
@@ -284,30 +318,43 @@ def __init__(self, token):
                 }
                 .thumbnail-container {
                     flex-shrink: 0;
-                    width: 200px;
-                    height: 112px;
+                    width: 320px;
+                    height: 180px;
                     background: #f0f0f0;
                     border-radius: 4px;
                     overflow: hidden;
+                    position: relative;
                 }
                 .thumbnail { 
                     width: 100%;
                     height: 100%;
                     object-fit: cover;
-                    object-position: center;
+                    display: block;
+                }
+                .no-thumbnail {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 100%;
+                    height: 100%;
+                    color: #999;
+                    font-size: 0.9em;
                 }
                 .asset-info { 
                     flex-grow: 1;
+                    min-width: 0;
                 }
                 .asset-name { 
                     font-size: 1.2em; 
                     font-weight: bold; 
                     margin: 0 0 8px 0;
+                    word-break: break-word;
                 }
                 .asset-type {
                     color: #666;
                     font-size: 0.9em;
                     margin-bottom: 8px;
+                    text-transform: capitalize;
                 }
                 .asset-link { 
                     color: #0066cc; 
@@ -361,12 +408,15 @@ def __init__(self, token):
                 <div class="asset-header">
                     <div class="thumbnail-container">
                         {% if asset.thumbnail_url %}
-                        <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
+                            <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                            <div class="no-thumbnail" style="display: none;">No preview available</div>
+                        {% else %}
+                            <div class="no-thumbnail">No preview available</div>
                         {% endif %}
                     </div>
                     <div class="asset-info">
                         <h2 class="asset-name">{{ asset.asset_name }}</h2>
-                        <div class="asset-type">Type: {{ asset.asset_type }}</div>
+                        <div class="asset-type">{{ asset.asset_type }}</div>
                         <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
                     </div>
                 </div>
@@ -446,4 +496,8 @@ def main():
                                 st.write("### Preview:")
                                 st.components.v1.html(html_content, height=600, scrolling=True)
         except Exception as e:
-            st.error(f"An error occurred:
+            st.error(f"An error occurred: {str(e)}")
+
+if __name__ == "__main__":
+    main()
+                    background:
