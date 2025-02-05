@@ -117,29 +117,32 @@ class FrameIOFeedbackExporter:
         st.error(f"All attempts to get folder contents failed for folder {folder_id}")
         return []
 
+    def get_asset_url(self, asset_id, project_id, asset_details):
+        """Generate correct URL for viewing asset in Frame.io"""
+        return f"https://app.frame.io/player/{asset_id}"
+    
     def get_asset_preview(self, asset_id, asset_details):
         """Get preview/thumbnail URL for an asset"""
         try:
-            # Check if there's a thumbnail URL directly in the asset details
-            if asset_details and 'thumbnails' in asset_details:
-                thumbnails = asset_details.get('thumbnails', {})
-                if isinstance(thumbnails, dict):
-                    # Try to get the smallest thumbnail first
-                    for size in ['small', 'medium', 'large']:
-                        if size in thumbnails:
-                            return thumbnails[size]
-                elif isinstance(thumbnails, list) and len(thumbnails) > 0:
-                    return thumbnails[0]  # Return first thumbnail if it's a list
-
-            # Fall back to the preview endpoint if no thumbnails found
-            url = f"{self.base_url}/assets/{asset_id}/preview"
-            preview_data = self.make_request(url)
-            if preview_data and 'url' in preview_data:
-                return preview_data['url']
+            # First try to get the direct URL from asset details
+            if asset_details:
+                # Try different potential fields for the preview
+                for field in ['thumbnail', 'poster', 'preview', 'cover']:
+                    if f'{field}_url' in asset_details:
+                        return asset_details[f'{field}_url']
                 
-        except requests.exceptions.RequestException as e:
-            if not (hasattr(e, 'response') and e.response.status_code == 404):
-                st.write(f"Error fetching preview for asset {asset_id}: {str(e)}")
+                # Check thumbnails array if it exists
+                thumbnails = asset_details.get('thumbnails', [])
+                if thumbnails and isinstance(thumbnails, list):
+                    return thumbnails[0]
+
+            # If no preview found in asset details, try the preview endpoint
+            preview_resp = self.make_request(f"{self.base_url}/assets/{asset_id}/preview")
+            if preview_resp and 'url' in preview_resp:
+                return preview_resp['url']
+
+        except Exception as e:
+            st.write(f"Error getting preview for asset {asset_id}: {str(e)}")
         return None
 
     def process_folder(self, folder_id, folder_name=""):
@@ -251,7 +254,7 @@ class FrameIOFeedbackExporter:
                                 # More detailed user information extraction
                                 author = comment.get('author', {})
                                 author_name = author.get('name')
-                                if not author_name:  # Fallback options if name isn't directly available
+                                if not author_name:
                                     author_name = author.get('display_name') or author.get('email') or "Unknown User"
                                 
                                 comment_text = comment.get('text', 'No comment text')
@@ -268,14 +271,19 @@ class FrameIOFeedbackExporter:
                                 continue
                         
                         if processed_comments:
-                            # Get preview URL for the asset
+                            # Get preview URL and asset URL
                             preview_url = self.get_asset_preview(asset['id'], asset)
+                            asset_url = self.get_asset_url(asset['id'], project_id, asset)
+                            
+                            # Debug output
+                            st.write(f"Asset URL: {asset_url}")
+                            st.write(f"Preview URL: {preview_url}")
                             
                             feedback_data.append({
                                 'asset_name': asset.get('name', 'Unnamed Asset'),
                                 'asset_type': asset.get('type', 'unknown'),
                                 'thumbnail_url': preview_url,
-                                'asset_url': f"https://app.frame.io/presentation/{project_id}?item={asset['id']}",
+                                'asset_url': asset_url,
                                 'comments': processed_comments
                             })
                     
