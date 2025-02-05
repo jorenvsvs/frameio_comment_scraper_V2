@@ -47,74 +47,64 @@ class FrameIOFeedbackExporter:
             return review_links
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching review links: {str(e)}")
-            st.write(f"Response status code: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
+            st.write(f"Response status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
             st.write(f"Response content: {e.response.content if hasattr(e, 'response') else 'unknown'}")
             return []
 
-     def get_folder_contents(self, folder_id):
+    def get_folder_contents(self, folder_id):
         """Get contents of a folder"""
-        url = f"{self.base_url}/assets/{folder_id}/children"
+        st.write(f"Getting contents of folder {folder_id}")
+        url = f"{self.base_url}/assets/{folder_id}/items"
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
             items = response.json()
             st.write(f"Found {len(items)} items in folder {folder_id}")
+            for item in items:
+                st.write(f"Item in folder: {item.get('name', 'Unnamed')} (Type: {item.get('type', 'unknown')})")
             return items
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching folder contents: {str(e)}")
+            st.write(f"Response status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
+            st.write(f"Response content: {e.response.content if hasattr(e, 'response') else 'unknown'}")
             return []
 
     def process_folder(self, folder_id, folder_name=""):
         """Recursively process a folder and its contents"""
+        st.write(f"Processing folder: {folder_name} ({folder_id})")
         assets = []
         items = self.get_folder_contents(folder_id)
         
         for item in items:
             item_type = item.get('type', '')
             name = item.get('name', 'Unnamed')
-            st.write(f"Found in folder {folder_name}: {name} (Type: {item_type})")
+            item_id = item.get('id')
             
             if item_type == 'folder':
-                # Recursively process subfolders
-                subfolder_assets = self.process_folder(item['id'], name)
+                st.write(f"Found subfolder: {name}")
+                subfolder_assets = self.process_folder(item_id, name)
                 assets.extend(subfolder_assets)
             elif item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review', 'asset']:
-                st.write(f"Adding asset: {name}")
+                st.write(f"Found asset: {name} ({item_type})")
                 assets.append(item)
         
+        st.write(f"Found {len(assets)} assets in folder {folder_name}")
         return assets
 
-    def get_asset_items(self, review_link_id):
-        """Get items in a review link"""
-        url = f"{self.base_url}/review_links/{review_link_id}/items"
+    def get_item_details(self, item_id):
+        """Get detailed information about an item"""
+        url = f"{self.base_url}/assets/{item_id}"
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
-            items = response.json()
-            st.write(f"Found {len(items)} items in review link {review_link_id}")
-            
-            # Get detailed information for each item
-            all_assets = []
-            for item in items:
-                asset_id = item.get('asset_id')
-                if asset_id:
-                    st.write(f"Fetching details for asset ID: {asset_id}")
-                    item_details = self.get_item_details(asset_id)
-                    if item_details:
-                        if item_details.get('type') == 'folder':
-                            # If it's a folder, process its contents
-                            folder_assets = self.process_folder(asset_id, item_details.get('name', 'Unnamed folder'))
-                            all_assets.extend(folder_assets)
-                        else:
-                            all_assets.append(item_details)
-                            st.write(f"Found item: {item_details.get('name', 'Unnamed')} (Type: {item_details.get('type', 'unknown')})")
-                else:
-                    st.write("No asset_id found for item")
-            
-            return all_assets
+            item_details = response.json()
+            st.write(f"Got details for item: {item_details.get('name', 'Unnamed')} (Type: {item_details.get('type', 'unknown')})")
+            return item_details
         except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching review link items: {str(e)}")
-            return []
+            st.error(f"Error fetching item details: {str(e)}")
+            st.write(f"Response status: {e.response.status_code if hasattr(e, 'response') else 'unknown'}")
+            st.write(f"Response content: {e.response.content if hasattr(e, 'response') else 'unknown'}")
+            return None
 
     def get_asset_comments(self, asset_id):
         """Fetch all comments for an asset"""
@@ -133,44 +123,44 @@ class FrameIOFeedbackExporter:
     def get_all_assets(self, project_id):
         """Get all assets in a project through review links"""
         st.write("Starting to collect all assets...")
-        assets = []
+        all_assets = []
         
         # Get review links
         review_links = self.get_review_links(project_id)
         
-        # Try to get items from each review link
+        # Process each review link
         for review_link in review_links:
             review_link_id = review_link.get('id')
             review_name = review_link.get('name', 'Unnamed review')
-            st.write(f"Checking review link: {review_name}")
+            st.write(f"\nProcessing review link: {review_name}")
             
-            items = self.get_asset_items(review_link_id)
-            for item in items:
-                item_type = item.get('type', '')
-                name = item.get('name', 'Unnamed')
-                st.write(f"Processing item: {name} (Type: {item_type})")
+            # Get items in review link
+            url = f"{self.base_url}/review_links/{review_link_id}/items"
+            try:
+                response = requests.get(url, headers=self.headers)
+                response.raise_for_status()
+                items = response.json()
+                st.write(f"Found {len(items)} items in review link")
                 
-                # Accept more types of content
-                if item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review', 'asset']:
-                    st.write(f"Adding asset: {name}")
-                    assets.append(item)
+                # Process each item
+                for item in items:
+                    asset_id = item.get('asset_id')
+                    if asset_id:
+                        st.write(f"\nChecking asset: {asset_id}")
+                        # Get asset details
+                        asset_details = self.get_item_details(asset_id)
+                        if asset_details:
+                            if asset_details.get('type') == 'folder':
+                                st.write(f"Processing folder: {asset_details.get('name')}")
+                                folder_assets = self.process_folder(asset_id, asset_details.get('name'))
+                                all_assets.extend(folder_assets)
+                            else:
+                                all_assets.append(asset_details)
+            except requests.exceptions.RequestException as e:
+                st.error(f"Error processing review link: {str(e)}")
         
-        st.write(f"Total assets found: {len(assets)}")
-        return assets
-
-    def get_asset_comments(self, asset_id):
-        """Fetch all comments for an asset"""
-        url = f"{self.base_url}/items/{asset_id}/comments"
-        try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            comments = response.json()
-            if comments:
-                st.write(f"Found {len(comments)} comments for asset {asset_id}")
-            return comments
-        except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching comments: {str(e)}")
-            return []
+        st.write(f"\nTotal assets found: {len(all_assets)}")
+        return all_assets
 
     def generate_report(self, project_id):
         """Generate an HTML report of all comments"""
