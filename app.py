@@ -16,11 +16,42 @@ class FrameIOFeedbackExporter:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
-        self.request_delay = 2.0     # 10 seconds between requests
+        self.request_delay = 0.5      # Half second between requests
         self.max_retries = 3
-        self.retry_delay = 1         # 1 minute initial retry delay
-        self.chunk_size = 40          # Process 10 assets at a time
-        self.chunk_delay = 1        # 5 minutes between chunks
+        self.retry_delay = 2         # 10 seconds retry delay
+        self.chunk_size = 30          # Process 30 assets at a time
+        self.chunk_delay = 2         # 20 seconds between chunks
+
+    def get_comment_color(self, comment_index):
+        """Generate a consistent color for comments"""
+        colors = [
+            '#FF6B6B',  # Red
+            '#4ECDC4',  # Teal
+            '#45B7D1',  # Blue
+            '#96CEB4',  # Green
+            '#FFAD60',  # Orange
+            '#9D94FF',  # Purple
+            '#FF9999',  # Pink
+            '#88D8B0'   # Mint
+        ]
+        return colors[comment_index % len(colors)]
+
+    def make_request(self, url, method='GET'):
+        """Make a rate-limited request with retries"""
+        for attempt in range(self.max_retries):
+            try:
+                time.sleep(self.request_delay)
+                response = requests.request(method, url, headers=self.headers)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429 and attempt < self.max_retries - 1:
+                    wait_time = self.retry_delay * (4 ** attempt)
+                    st.write(f"Rate limit hit. Waiting {wait_time} seconds...")
+                    time.sleep(wait_time)
+                    continue
+                raise
+        return None
 
     def save_progress(self, project_id, feedback_data, processed_ids):
         """Save current progress to a file"""
@@ -42,24 +73,7 @@ class FrameIOFeedbackExporter:
         except:
             return [], set()
 
-    def make_request(self, url, method='GET'):
-        """Make a rate-limited request with retries"""
-        for attempt in range(self.max_retries):
-            try:
-                time.sleep(self.request_delay)
-                response = requests.request(method, url, headers=self.headers)
-                response.raise_for_status()
-                return response.json()
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 429 and attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (4 ** attempt)
-                    st.write(f"Rate limit hit. Waiting {wait_time} seconds...")
-                    time.sleep(wait_time)
-                    continue
-                raise
-        return None
-
-    def get_teams(self):
+def get_teams(self):
         """Fetch all accessible teams"""
         try:
             return self.make_request(f"{self.base_url}/teams")
@@ -95,6 +109,28 @@ class FrameIOFeedbackExporter:
             st.error(f"Error fetching item details: {str(e)}")
             return None
 
+    def get_folder_path(self, asset, folders=None):
+        """Get the full folder path for an asset"""
+        if folders is None:
+            folders = {}
+        
+        parent_id = asset.get('parent_id')
+        if not parent_id:
+            return "/"  # Root folder
+            
+        if parent_id not in folders:
+            try:
+                parent = self.get_item_details(parent_id)
+                if parent:
+                    folders[parent_id] = parent
+                    if parent.get('type') == 'folder':
+                        parent_path = self.get_folder_path(parent, folders)
+                        return f"{parent_path}/{parent.get('name', 'Unknown Folder')}"
+            except Exception as e:
+                st.write(f"Error getting folder path: {str(e)}")
+                
+        return "/"
+
     def get_folder_contents(self, folder_id):
         """Get contents of a folder"""
         st.write(f"Getting contents of folder {folder_id}")
@@ -107,9 +143,8 @@ class FrameIOFeedbackExporter:
         
         for endpoint in endpoints:
             try:
-                st.write(f"Trying endpoint: {endpoint}")
                 items = self.make_request(endpoint)
-                st.write(f"Success! Found {len(items)} items")
+                st.write(f"Found {len(items)} items")
                 return items
             except requests.exceptions.RequestException:
                 continue
@@ -117,59 +152,65 @@ class FrameIOFeedbackExporter:
         st.error(f"All attempts to get folder contents failed for folder {folder_id}")
         return []
 
-    def get_asset_url(self, asset_id, project_id, asset_details):
-        """Generate correct URL for viewing asset in Frame.io"""
-        return f"https://app.frame.io/player/{asset_id}"
-    
     def get_asset_preview(self, asset_id, asset_details):
         """Get preview/thumbnail URL for an asset"""
         try:
-            # First try to get the direct URL from asset details
+            # Check if there's a thumbnail URL directly in the asset details
             if asset_details:
-                # Try different potential fields for the preview
-                for field in ['thumbnail', 'poster', 'preview', 'cover']:
-                    if f'{field}_url' in asset_details:
-                        return asset_details[f'{field}_url']
+                # Try all possible thumbnail fields
+                for field in ['thumbnails', 'thumbnail_url', 'preview_url', 'cover_url']:
+                    if field in asset_details:
+                        thumbnails = asset_details.get(field)
+                        if isinstance(thumbnails, dict):
+                            # Try to get the smallest thumbnail first
+                            for size in ['small', 'medium', 'large']:
+                                if size in thumbnails:
+                                    return thumbnails[size]
+                        elif isinstance(thumbnails, list) and thumbnails:
+                            return thumbnails[0]
+                        elif isinstance(thumbnails, str):
+                            return thumbnails
+
+            # Fall back to the preview endpoint
+            url = f"{self.base_url}/assets/{asset_id}/preview"
+            preview_data = self.make_request(url)
+            if preview_data and 'url' in preview_data:
+                return preview_data['url']
                 
-                # Check thumbnails array if it exists
-                thumbnails = asset_details.get('thumbnails', [])
-                if thumbnails and isinstance(thumbnails, list):
-                    return thumbnails[0]
-
-            # If no preview found in asset details, try the preview endpoint
-            preview_resp = self.make_request(f"{self.base_url}/assets/{asset_id}/preview")
-            if preview_resp and 'url' in preview_resp:
-                return preview_resp['url']
-
         except Exception as e:
-            st.write(f"Error getting preview for asset {asset_id}: {str(e)}")
+            if not (hasattr(e, 'response') and e.response.status_code == 404):
+                st.write(f"Error fetching preview for asset {asset_id}: {str(e)}")
         return None
 
-    def process_folder(self, folder_id, folder_name=""):
-        """Recursively process a folder and its contents"""
-        st.write(f"\n>>> Processing folder: {folder_name} ({folder_id})")
-        assets = []
-        items = self.get_folder_contents(folder_id)
-        
-        for item in items:
-            item_type = item.get('type', '')
-            name = item.get('name', 'Unnamed')
-            item_id = item.get('id')
+    def process_comment_annotations(self, comment, comment_color):
+        """Process annotations from a comment"""
+        annotations = comment.get('annotations', [])
+        if not annotations:
+            return None
             
-            st.write(f"Examining item: {name} ({item_type})")
-            
-            if item_type == 'folder':
-                st.write(f"Found subfolder: {name}")
-                subfolder_assets = self.process_folder(item_id, name)
-                assets.extend(subfolder_assets)
-            elif item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review', 'asset']:
-                st.write(f"Found asset: {name} ({item_type})")
-                assets.append(item)
-        
-        st.write(f"Found {len(assets)} assets in folder {folder_name}")
-        return assets
+        try:
+            annotation_data = []
+            for annotation in annotations:
+                # Get the annotation type and data
+                a_type = annotation.get('type')
+                if a_type in ['rectangle', 'circle', 'arrow', 'line', 'freehand']:
+                    data = {
+                        'type': a_type,
+                        'timestamp': annotation.get('timestamp', 0),
+                        'color': comment_color,
+                        'points': annotation.get('points', []),
+                        'x': annotation.get('x', 0),
+                        'y': annotation.get('y', 0),
+                        'width': annotation.get('width', 0),
+                        'height': annotation.get('height', 0)
+                    }
+                    annotation_data.append(data)
+            return annotation_data if annotation_data else None
+        except Exception as e:
+            st.write(f"Error processing annotation: {str(e)}")
+            return None
 
-    def get_asset_comments(self, asset_id):
+def get_asset_comments(self, asset_id):
         """Fetch all comments for an asset"""
         try:
             comments = self.make_request(f"{self.base_url}/assets/{asset_id}/comments")
@@ -179,6 +220,23 @@ class FrameIOFeedbackExporter:
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching comments: {str(e)}")
             return []
+
+    def organize_assets_by_folder(self, assets):
+        """Organize assets into a folder structure"""
+        folders = {}
+        organized_assets = []
+        
+        # First pass: collect all folder information
+        for asset in assets:
+            folder_path = self.get_folder_path(asset)
+            organized_assets.append({
+                'asset': asset,
+                'folder_path': folder_path
+            })
+        
+        # Sort by folder path and then by asset name
+        organized_assets.sort(key=lambda x: (x['folder_path'], x['asset'].get('name', '')))
+        return organized_assets
 
     def get_all_assets(self, project_id):
         """Get all assets in a project through review links"""
@@ -230,93 +288,59 @@ class FrameIOFeedbackExporter:
         # Load previous progress if any
         feedback_data, processed_ids = self.load_progress(project_id)
         
-        # Filter out already processed assets
+        # Filter out already processed assets and organize them
         assets_to_process = [a for a in assets if a['id'] not in processed_ids]
+        organized_assets = self.organize_assets_by_folder(assets_to_process)
+
+        # Process assets in order
+        folder_feedback = {}
         
-        total_assets = len(assets_to_process)
-        st.write(f"Processing {total_assets} remaining assets in chunks of {self.chunk_size}")
-        
-        progress_bar = st.progress(len(processed_ids) / len(assets))
-        
-        # Process assets in chunks
-        for chunk_start in range(0, total_assets, self.chunk_size):
-            chunk = assets_to_process[chunk_start:chunk_start + self.chunk_size]
-            st.write(f"\nProcessing chunk {chunk_start//self.chunk_size + 1} of {(total_assets + self.chunk_size - 1)//self.chunk_size}")
+        for organized_asset in organized_assets:
+            asset = organized_asset['asset']
+            folder_path = organized_asset['folder_path']
             
-            # Process each asset in the chunk
-            for asset in chunk:
-                try:
-                    comments = self.get_asset_comments(asset['id'])
-                    if comments:
-                        processed_comments = []
-                        for comment in comments:
-                            try:
-                                # More detailed user information extraction
-                                author = comment.get('author', {})
-                                author_name = author.get('name')
-                                if not author_name:
-                                    author_name = author.get('display_name') or author.get('email') or "Unknown User"
-                                
-                                comment_text = comment.get('text', 'No comment text')
-                                created_at = comment.get('created_at', datetime.now().isoformat())
-                                
-                                processed_comments.append({
-                                    'text': comment_text,
-                                    'author': author_name,
-                                    'timestamp': datetime.fromisoformat(created_at).strftime('%Y-%m-%d %H:%M'),
-                                    'timestamp_raw': created_at
-                                })
-                            except Exception as e:
-                                st.write(f"Error processing comment: {str(e)}")
-                                continue
-                        
-                        if processed_comments:
-                            # Get preview URL and asset URL
-                            preview_url = self.get_asset_preview(asset['id'], asset)
-                            asset_url = self.get_asset_url(asset['id'], project_id, asset)
+            if folder_path not in folder_feedback:
+                folder_feedback[folder_path] = []
+
+            try:
+                comments = self.get_asset_comments(asset['id'])
+                if comments:
+                    processed_comments = []
+                    for comment_idx, comment in enumerate(comments):
+                        try:
+                            author_name = comment.get('author', {}).get('name', 'Unknown User')
+                            comment_text = comment.get('text', 'No comment text')
+                            created_at = comment.get('created_at', datetime.now().isoformat())
                             
-                            # Debug output
-                            st.write(f"Asset URL: {asset_url}")
-                            st.write(f"Preview URL: {preview_url}")
+                            comment_color = self.get_comment_color(comment_idx)
+                            annotations = self.process_comment_annotations(comment, comment_color)
                             
-                            feedback_data.append({
-                                'asset_name': asset.get('name', 'Unnamed Asset'),
-                                'asset_type': asset.get('type', 'unknown'),
-                                'thumbnail_url': preview_url,
-                                'asset_url': asset_url,
-                                'comments': processed_comments
+                            processed_comments.append({
+                                'text': comment_text,
+                                'author': author_name,
+                                'timestamp': datetime.fromisoformat(created_at).strftime('%Y-%m-%d %H:%M'),
+                                'timestamp_raw': created_at,
+                                'annotations': annotations,
+                                'color': comment_color,
+                                'has_annotations': bool(annotations)
                             })
                     
-                    processed_ids.add(asset['id'])
-                    # Save progress after each asset
-                    self.save_progress(project_id, feedback_data, processed_ids)
-                    
-                except Exception as e:
-                    st.error(f"Error processing asset {asset.get('name', 'Unnamed')}: {str(e)}")
-                    continue
-                
-                progress_bar.progress(len(processed_ids) / len(assets))
-            
-            # After each chunk, take a long break
-            if chunk_start + self.chunk_size < total_assets:
-                st.write(f"Chunk complete. Waiting {self.chunk_delay} seconds before next chunk...")
-                time.sleep(self.chunk_delay)
-        
-        if feedback_data:
-            feedback_data.sort(
-                key=lambda x: max([c['timestamp_raw'] for c in x['comments']], default=''),
-                reverse=True
-            )
-        
-        # Clean up progress file
-        try:
-            os.remove(f'frameio_progress_{project_id}.pkl')
-        except:
-            pass
-        
-        return self.render_html_report(feedback_data)
+                    if processed_comments:
+                        folder_feedback[folder_path].append({
+                            'asset_name': asset.get('name', 'Unnamed Asset'),
+                            'asset_type': asset.get('type', 'unknown'),
+                            'thumbnail_url': self.get_asset_preview(asset['id'], asset),
+                            'asset_url': f"https://app.frame.io/player/{asset['id']}",
+                            'comments': processed_comments
+                        })
 
-    def render_html_report(self, feedback_data):
+            except Exception as e:
+                st.error(f"Error processing asset {asset.get('name', 'Unnamed')}: {str(e)}")
+                continue
+
+        return self.render_html_report(folder_feedback)
+
+def render_html_report(self, folder_feedback):
         """Render the HTML report using a template"""
         template_str = """
         <!DOCTYPE html>
@@ -329,13 +353,66 @@ class FrameIOFeedbackExporter:
                     margin: 20px;
                     background: #f5f5f5;
                 }
-                .asset { 
-                    border: 1px solid #ddd; 
-                    margin: 20px 0; 
-                    padding: 20px; 
-                    border-radius: 8px;
+                .folder-section {
+                    margin: 30px 0;
                     background: white;
+                    border-radius: 8px;
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    overflow: hidden;
+                }
+                .folder-header {
+                    padding: 20px;
+                    background: #f8f9fa;
+                    cursor: pointer;
+                    user-select: none;
+                    display: flex;
+                    align-items: center;
+                    border-bottom: 1px solid #eee;
+                }
+                .folder-header:hover {
+                    background: #f0f0f0;
+                }
+                .folder-title {
+                    font-size: 1.2em;
+                    color: #333;
+                    margin: 0;
+                    flex-grow: 1;
+                }
+                .folder-content {
+                    max-height: 0;
+                    overflow: hidden;
+                    transition: max-height 0.3s ease-out;
+                }
+                .folder-content.open {
+                    max-height: none;
+                }
+                .folder-toggle {
+                    margin-right: 10px;
+                    width: 20px;
+                    height: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: bold;
+                    transition: transform 0.3s ease;
+                }
+                .folder-toggle.open {
+                    transform: rotate(90deg);
+                }
+                .folder-count {
+                    background: #e9ecef;
+                    padding: 4px 8px;
+                    border-radius: 12px;
+                    font-size: 0.9em;
+                    color: #666;
+                    margin-left: 10px;
+                }
+                .asset { 
+                    border-bottom: 1px solid #eee;
+                    padding: 20px;
+                }
+                .asset:last-child {
+                    border-bottom: none;
                 }
                 .asset-header { 
                     display: flex; 
@@ -351,7 +428,6 @@ class FrameIOFeedbackExporter:
                     border-radius: 4px;
                     overflow: hidden;
                     position: relative;
-                    transition: opacity 0.2s;
                 }
                 .thumbnail-container:hover {
                     opacity: 0.9;
@@ -362,30 +438,18 @@ class FrameIOFeedbackExporter:
                     object-fit: cover;
                     display: block;
                 }
-                .no-thumbnail {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    width: 100%;
-                    height: 100%;
-                    color: #999;
-                    font-size: 0.9em;
-                }
                 .asset-info { 
                     flex-grow: 1;
-                    min-width: 0;
                 }
                 .asset-name { 
                     font-size: 1.2em; 
                     font-weight: bold; 
                     margin: 0 0 8px 0;
-                    word-break: break-word;
                 }
                 .asset-type {
                     color: #666;
                     font-size: 0.9em;
                     margin-bottom: 8px;
-                    text-transform: capitalize;
                 }
                 .asset-link { 
                     color: #0066cc; 
@@ -394,9 +458,6 @@ class FrameIOFeedbackExporter:
                     padding: 4px 8px;
                     background: #f0f5ff;
                     border-radius: 4px;
-                }
-                .asset-link:hover {
-                    background: #e0ebff;
                 }
                 .comments { 
                     margin-top: 15px;
@@ -408,10 +469,23 @@ class FrameIOFeedbackExporter:
                     border-radius: 6px;
                     border-left: 4px solid #ddd;
                 }
+                .comment.has-annotation {
+                    background: #ffffff;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
                 .comment-meta { 
                     color: #666; 
                     font-size: 0.9em; 
                     margin-bottom: 8px;
+                }
+                .no-thumbnail {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 100%;
+                    height: 100%;
+                    color: #999;
+                    font-size: 0.9em;
                 }
                 .summary { 
                     background: #eef2ff;
@@ -420,44 +494,88 @@ class FrameIOFeedbackExporter:
                     border-radius: 8px;
                     border: 1px solid #dde5ff;
                 }
-                @media print {
-                    .asset { break-inside: avoid; }
-                    body { background: white; }
-                    .asset { box-shadow: none; }
-                }
             </style>
+            <script>
+                function toggleFolder(folderId) {
+                    const header = document.querySelector(`#folder-${folderId} .folder-header`);
+                    const content = document.querySelector(`#folder-${folderId} .folder-content`);
+                    const toggle = document.querySelector(`#folder-${folderId} .folder-toggle`);
+                    
+                    content.classList.toggle('open');
+                    toggle.classList.toggle('open');
+                    
+                    // Save state to localStorage
+                    const isOpen = content.classList.contains('open');
+                    localStorage.setItem(`folder-${folderId}`, isOpen);
+                }
+
+                // Restore folder states on page load
+                window.onload = function() {
+                    document.querySelectorAll('.folder-section').forEach(folder => {
+                        const folderId = folder.id.split('-')[1];
+                        const isOpen = localStorage.getItem(`folder-${folderId}`) === 'true';
+                        if (isOpen) {
+                            folder.querySelector('.folder-content').classList.add('open');
+                            folder.querySelector('.folder-toggle').classList.add('open');
+                        }
+                    });
+                }
+            </script>
         </head>
         <body>
             <h1>Frame.io Feedback Report</h1>
             <div class="summary">
-                <p>Total assets with feedback: {{ feedback_data|length }}</p>
-                <p>Total comments: {{ feedback_data|map(attribute='comments')|map('length')|sum }}</p>
+                <p>Total folders with feedback: {{ folder_feedback.keys()|length }}</p>
+                <p>Total assets with feedback: {{ folder_feedback.values()|map('length')|sum }}</p>
                 <p>Generated: {{ now }}</p>
             </div>
-            {% for asset in feedback_data %}
-            <div class="asset">
-                <div class="asset-header">
-                    <a href="{{ asset.asset_url }}" target="_blank" class="thumbnail-container">
-                        {% if asset.thumbnail_url %}
-                            <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
-                            <div class="no-thumbnail" style="display: none;">No preview available</div>
-                        {% else %}
-                            <div class="no-thumbnail">No preview available</div>
-                        {% endif %}
-                    </a>
-                    <div class="asset-info">
-                        <h2 class="asset-name">{{ asset.asset_name }}</h2>
-                        <div class="asset-type">{{ asset.asset_type }}</div>
-                        <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
-                    </div>
+            {% for folder_path, assets in folder_feedback.items()|sort %}
+            <div class="folder-section" id="folder-{{ loop.index }}">
+                <div class="folder-header" onclick="toggleFolder('{{ loop.index }}')">
+                    <div class="folder-toggle">▶</div>
+                    <h2 class="folder-title">{{ folder_path }}</h2>
+                    <span class="folder-count">{{ assets|length }} asset{% if assets|length != 1 %}s{% endif %}</span>
                 </div>
-                <div class="comments">
-                    {% for comment in asset.comments %}
-                    <div class="comment">
-                        <div class="comment-meta">
-                            <strong>{{ comment.author }}</strong> - {{ comment.timestamp }}
+                <div class="folder-content">
+                    {% for asset in assets %}
+                    <div class="asset">
+                        <div class="asset-header">
+                            <a href="{{ asset.asset_url }}" target="_blank" class="thumbnail-container">
+                                {% if asset.thumbnail_url %}
+                                    <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
+                                {% else %}
+                                    <div class="no-thumbnail">No preview available</div>
+                                {% endif %}
+                            </a>
+                            <div class="asset-info">
+                                <h2 class="asset-name">{{ asset.asset_name }}</h2>
+                                <div class="asset-type">{{ asset.asset_type }}</div>
+                                <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
+                            </div>
                         </div>
-                        {{ comment.text }}
+                        <div class="comments">
+                            {% for comment in asset.comments %}
+                            <div class="comment {% if comment.has_annotations %}has-annotation{% endif %}" 
+                                 style="border-left-color: {{ comment.color }}; {% if comment.has_annotations %}border-width: 4px;{% endif %}">
+                                <div class="comment-meta" style="color: {{ comment.color }};">
+                                    <strong>{{ comment.author }}</strong> - {{ comment.timestamp }}
+                                </div>
+                                {% if comment.has_annotations %}
+                                <div class="comment-thumbnail">
+                                    <div class="thumbnail-container">
+                                        {% if asset.thumbnail_url %}
+                                            <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
+                                            {{ generate_svg_overlay(comment.annotations) | safe }}
+                                        {% else %}
+                                            <div class="no-thumbnail">No preview available</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                                {{ comment.text }}
+                            </div>
+                            {% endfor %}
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
@@ -467,9 +585,8 @@ class FrameIOFeedbackExporter:
         </html>
         """
         
-        template = Template(template_str)
-        return template.render(
-            feedback_data=feedback_data,
+        return Template(template_str).render(
+            folder_feedback=folder_feedback,
             now=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         )
 
@@ -531,4 +648,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-               
