@@ -14,15 +14,26 @@ class FrameIOFeedbackExporter:
             "Content-Type": "application/json"
         }
     
-    def get_projects(self):
-        """Fetch all accessible projects"""
-        url = f"{self.base_url}/me/projects"
+    def get_teams(self):
+        """Fetch all accessible teams"""
+        url = f"{self.base_url}/teams"
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching projects: {str(e)}")
+            st.error(f"Error fetching teams: {str(e)}")
+            return []
+
+    def get_team_projects(self, team_id):
+        """Fetch all projects for a team"""
+        url = f"{self.base_url}/teams/{team_id}/projects"
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error fetching team projects: {str(e)}")
             return []
 
     def get_project_assets(self, project_id):
@@ -159,28 +170,39 @@ def main():
     if api_token:
         exporter = FrameIOFeedbackExporter(api_token)
         
-        # Fetch and display projects
-        projects = exporter.get_projects()
-        if projects:
-            project_options = {p['name']: p['id'] for p in projects}
-            selected_project = st.selectbox(
-                "Select Project",
-                options=list(project_options.keys())
+        # Fetch and display teams
+        teams = exporter.get_teams()
+        if teams:
+            team_options = {t['name']: t['id'] for t in teams}
+            selected_team = st.selectbox(
+                "Select Team",
+                options=list(team_options.keys())
             )
             
-            if st.button("Generate Report"):
-                with st.spinner("Generating report..."):
-                    project_id = project_options[selected_project]
-                    html_content = exporter.generate_report(project_id)
+            # Fetch and display projects for selected team
+            if selected_team:
+                team_id = team_options[selected_team]
+                projects = exporter.get_team_projects(team_id)
+                if projects:
+                    project_options = {p['name']: p['id'] for p in projects}
+                    selected_project = st.selectbox(
+                        "Select Project",
+                        options=list(project_options.keys())
+                    )
                     
-                    # Create download button for HTML
-                    b64 = base64.b64encode(html_content.encode()).decode()
-                    href = f'<a href="data:text/html;base64,{b64}" download="frameio_feedback_report.html">Download Report</a>'
-                    st.markdown(href, unsafe_allow_html=True)
-                    
-                    # Preview
-                    st.write("### Preview:")
-                    st.components.v1.html(html_content, height=600, scrolling=True)
+                    if st.button("Generate Report"):
+                        with st.spinner("Generating report..."):
+                            project_id = project_options[selected_project]
+                            html_content = exporter.generate_report(project_id)
+                            
+                            # Create download button for HTML
+                            b64 = base64.b64encode(html_content.encode()).decode()
+                            href = f'<a href="data:text/html;base64,{b64}" download="frameio_feedback_report.html">Download Report</a>'
+                            st.markdown(href, unsafe_allow_html=True)
+                            
+                            # Preview
+                            st.write("### Preview:")
+                            st.components.v1.html(html_content, height=600, scrolling=True)
 
 if __name__ == "__main__":
     main()
