@@ -36,20 +36,52 @@ class FrameIOFeedbackExporter:
             st.error(f"Error fetching team projects: {str(e)}")
             return []
 
-    def get_project_assets(self, project_id):
-        """Fetch all assets in a project"""
-        url = f"{self.base_url}/projects/{project_id}/assets"
+    def get_project_root(self, project_id):
+        """Get the root folder of a project"""
+        url = f"{self.base_url}/projects/{project_id}/root"
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching assets: {str(e)}")
+            st.error(f"Error fetching project root: {str(e)}")
+            return None
+
+    def get_folder_items(self, folder_id):
+        """Get items in a folder"""
+        url = f"{self.base_url}/items/{folder_id}/children"
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error fetching folder items: {str(e)}")
             return []
+
+    def get_all_assets(self, project_id):
+        """Recursively get all assets in a project"""
+        assets = []
+        root = self.get_project_root(project_id)
+        if root:
+            assets.extend(self._traverse_folder(root['id']))
+        return assets
+
+    def _traverse_folder(self, folder_id):
+        """Recursively traverse a folder and collect assets"""
+        assets = []
+        items = self.get_folder_items(folder_id)
+        
+        for item in items:
+            if item['type'] == 'folder':
+                assets.extend(self._traverse_folder(item['id']))
+            elif item['type'] in ['video', 'image', 'pdf', 'audio']:
+                assets.append(item)
+        
+        return assets
     
     def get_asset_comments(self, asset_id):
         """Fetch all comments for an asset"""
-        url = f"{self.base_url}/assets/{asset_id}/comments"
+        url = f"{self.base_url}/items/{asset_id}/comments"
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
@@ -60,7 +92,7 @@ class FrameIOFeedbackExporter:
 
     def generate_report(self, project_id):
         """Generate an HTML report of all comments"""
-        assets = self.get_project_assets(project_id)
+        assets = self.get_all_assets(project_id)
         feedback_data = []
         
         # Progress bar for asset processing
@@ -72,7 +104,7 @@ class FrameIOFeedbackExporter:
                     'asset_name': asset['name'],
                     'asset_type': asset['type'],
                     'thumbnail_url': asset.get('thumbnail_url', ''),
-                    'asset_url': f"https://app.frame.io/asset/{asset['id']}",
+                    'asset_url': f"https://app.frame.io/presentation/{project_id}?item={asset['id']}",
                     'comments': [{
                         'text': comment['text'],
                         'author': comment['author']['name'],
@@ -191,7 +223,7 @@ def main():
                     )
                     
                     if st.button("Generate Report"):
-                        with st.spinner("Generating report..."):
+                        with st.spinner("Generating report... This might take a few minutes for large projects"):
                             project_id = project_options[selected_project]
                             html_content = exporter.generate_report(project_id)
                             
