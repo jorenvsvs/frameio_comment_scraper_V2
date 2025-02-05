@@ -367,6 +367,109 @@ class FrameIOFeedbackExporter:
 
         return self.render_html_report(folder_feedback)
 
+
+
+def process_comment_author(self, comment):
+    """Extract author name from comment with better debugging"""
+    author = comment.get('author', {})
+    st.write("Author data:", author)  # Debug line
+    
+    # Try different possible fields
+    name = (author.get('name') or 
+            author.get('display_name') or 
+            author.get('full_name') or 
+            author.get('email', 'Unknown User'))
+    return name
+
+def get_asset_preview(self, asset_id, asset_details):
+    """Get preview/thumbnail URL for an asset with better debugging"""
+    st.write(f"Asset details for preview: {json.dumps(asset_details, indent=2)}")  # Debug line
+    
+    try:
+        # First try to get the preview URL
+        url = f"{self.base_url}/assets/{asset_id}/preview"
+        preview_data = self.make_request(url)
+        st.write(f"Preview endpoint response: {json.dumps(preview_data, indent=2)}")  # Debug line
+        
+        if preview_data and isinstance(preview_data, dict):
+            if 'url' in preview_data:
+                return preview_data['url']
+        
+        # If no preview, try to get the source URL
+        if asset_details:
+            for key in ['url', 'source_url', 'original_url', 'download_url']:
+                if key in asset_details:
+                    return asset_details[key]
+        
+    except Exception as e:
+        st.write(f"Error getting preview: {str(e)}")
+    return None
+
+def generate_svg_overlay(self, annotations, image_width=200, image_height=112):
+    """Generate SVG overlay for annotations"""
+    if not annotations:
+        return ""
+    
+    st.write(f"Generating SVG for annotations: {json.dumps(annotations, indent=2)}")  # Debug line
+    
+    def scale_point(point, dimension):
+        """Scale point to percentage"""
+        return (point * 100.0) / dimension
+        
+    svg_paths = []
+    for ann in annotations:
+        if ann['type'] == 'rectangle':
+            x = scale_point(ann['x'], image_width)
+            y = scale_point(ann['y'], image_height)
+            width = scale_point(ann['width'], image_width)
+            height = scale_point(ann['height'], image_height)
+            svg_paths.append(
+                f'<rect x="{x}%" y="{y}%" width="{width}%" height="{height}%" '
+                f'fill="none" stroke="{ann["color"]}" stroke-width="2" />'
+            )
+        elif ann['type'] == 'arrow':
+            if ann['points']:
+                start = ann['points'][0]
+                end = ann['points'][-1]
+                x1 = scale_point(start[0], image_width)
+                y1 = scale_point(start[1], image_height)
+                x2 = scale_point(end[0], image_width)
+                y2 = scale_point(end[1], image_height)
+                svg_paths.append(
+                    f'<line x1="{x1}%" y1="{y1}%" x2="{x2}%" y2="{y2}%" '
+                    f'stroke="{ann["color"]}" stroke-width="2" marker-end="url(#arrow)" />'
+                )
+        elif ann['type'] == 'freehand':
+            if ann['points']:
+                points = [(scale_point(p[0], image_width), 
+                          scale_point(p[1], image_height)) for p in ann['points']]
+                path_d = f'M {points[0][0]},{points[0][1]}'
+                for p in points[1:]:
+                    path_d += f' L {p[0]},{p[1]}'
+                svg_paths.append(
+                    f'<path d="{path_d}" fill="none" '
+                    f'stroke="{ann["color"]}" stroke-width="2" />'
+                )
+
+    if svg_paths:
+        markers = '''
+            <defs>
+                <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                    orient="auto" markerUnits="strokeWidth">
+                    <path d="M0,0 L0,6 L9,3 z" fill="currentColor"/>
+                </marker>
+            </defs>
+        '''
+        return f'''
+            <svg class="annotation-overlay" viewBox="0 0 100 100" 
+                 preserveAspectRatio="none" 
+                 style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+                {markers}
+                {" ".join(svg_paths)}
+            </svg>
+        '''
+    return ""
+    
     def render_html_report(self, folder_feedback):
         """Render the HTML report using a template"""
         template_str = """
