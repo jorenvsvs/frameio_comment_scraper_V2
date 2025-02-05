@@ -193,22 +193,41 @@ class FrameIOFeedbackExporter:
         for idx, asset in enumerate(assets):
             comments = self.get_asset_comments(asset['id'])
             if comments:
-                feedback_data.append({
-                    'asset_name': asset['name'],
-                    'asset_type': asset['type'],
-                    'thumbnail_url': asset.get('thumbnail_url', ''),
-                    'asset_url': f"https://app.frame.io/presentation/{project_id}?item={asset['id']}",
-                    'comments': [{
-                        'text': comment['text'],
-                        'author': comment['author']['name'],
-                        'timestamp': datetime.fromisoformat(comment['created_at']).strftime('%Y-%m-%d %H:%M'),
-                        'timestamp_raw': comment['created_at']
-                    } for comment in comments]
-                })
+                processed_comments = []
+                for comment in comments:
+                    # Safely get comment data with defaults for missing fields
+                    try:
+                        author_name = comment.get('author', {}).get('name', 'Unknown User')
+                        comment_text = comment.get('text', 'No comment text')
+                        created_at = comment.get('created_at', datetime.now().isoformat())
+                        
+                        processed_comments.append({
+                            'text': comment_text,
+                            'author': author_name,
+                            'timestamp': datetime.fromisoformat(created_at).strftime('%Y-%m-%d %H:%M'),
+                            'timestamp_raw': created_at
+                        })
+                    except Exception as e:
+                        st.write(f"Skipping comment due to error: {str(e)}")
+                        continue
+                
+                if processed_comments:  # Only add asset if it has valid comments
+                    feedback_data.append({
+                        'asset_name': asset.get('name', 'Unnamed Asset'),
+                        'asset_type': asset.get('type', 'unknown'),
+                        'thumbnail_url': asset.get('thumbnail_url', ''),
+                        'asset_url': f"https://app.frame.io/presentation/{project_id}?item={asset['id']}",
+                        'comments': processed_comments
+                    })
+            
             progress_bar.progress((idx + 1) / len(assets))
         
         # Sort feedback by most recent comment
-        feedback_data.sort(key=lambda x: max([c['timestamp_raw'] for c in x['comments']]) if x['comments'] else '', reverse=True)
+        if feedback_data:
+            feedback_data.sort(
+                key=lambda x: max([c['timestamp_raw'] for c in x['comments']], default=''),
+                reverse=True
+            )
         
         return self.render_html_report(feedback_data)
 
