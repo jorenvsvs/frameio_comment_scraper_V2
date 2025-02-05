@@ -73,7 +73,7 @@ class FrameIOFeedbackExporter:
         except:
             return [], set()
 
-def get_teams(self):
+    def get_teams(self):
         """Fetch all accessible teams"""
         try:
             return self.make_request(f"{self.base_url}/teams")
@@ -210,7 +210,7 @@ def get_teams(self):
             st.write(f"Error processing annotation: {str(e)}")
             return None
 
-def get_asset_comments(self, asset_id):
+    def get_asset_comments(self, asset_id):
         """Fetch all comments for an asset"""
         try:
             comments = self.make_request(f"{self.base_url}/assets/{asset_id}/comments")
@@ -340,7 +340,7 @@ def get_asset_comments(self, asset_id):
 
         return self.render_html_report(folder_feedback)
 
-def render_html_report(self, folder_feedback):
+    def render_html_report(self, folder_feedback):
         """Render the HTML report using a template"""
         template_str = """
         <!DOCTYPE html>
