@@ -36,15 +36,16 @@ class FrameIOFeedbackExporter:
             st.error(f"Error fetching team projects: {str(e)}")
             return []
 
-    def get_project_root(self, project_id):
-        """Get the root folder of a project"""
-        url = f"{self.base_url}/projects/{project_id}/root"
+    def get_project_content(self, project_id):
+        """Get the root content of a project"""
+        url = f"{self.base_url}/projects/{project_id}"
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
-            return response.json()
+            project_data = response.json()
+            return project_data.get('root_folder_id')
         except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching project root: {str(e)}")
+            st.error(f"Error fetching project content: {str(e)}")
             return None
 
     def get_folder_items(self, folder_id):
@@ -61,9 +62,9 @@ class FrameIOFeedbackExporter:
     def get_all_assets(self, project_id):
         """Recursively get all assets in a project"""
         assets = []
-        root = self.get_project_root(project_id)
-        if root:
-            assets.extend(self._traverse_folder(root['id']))
+        root_folder_id = self.get_project_content(project_id)
+        if root_folder_id:
+            assets.extend(self._traverse_folder(root_folder_id))
         return assets
 
     def _traverse_folder(self, folder_id):
@@ -74,7 +75,7 @@ class FrameIOFeedbackExporter:
         for item in items:
             if item['type'] == 'folder':
                 assets.extend(self._traverse_folder(item['id']))
-            elif item['type'] in ['video', 'image', 'pdf', 'audio']:
+            elif item['type'] in ['version_stack', 'file', 'video', 'image', 'pdf', 'audio']:
                 assets.append(item)
         
         return assets
