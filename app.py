@@ -18,9 +18,9 @@ class FrameIOFeedbackExporter:
         }
         self.request_delay = 2.0     # 10 seconds between requests
         self.max_retries = 3
-        self.retry_delay = 2         # 1 minute initial retry delay
-        self.chunk_size = 20          # Process 10 assets at a time
-        self.chunk_delay = 3        # 5 minutes between chunks
+        self.retry_delay = 1         # 1 minute initial retry delay
+        self.chunk_size = 40          # Process 10 assets at a time
+        self.chunk_delay = 1        # 5 minutes between chunks
 
     def save_progress(self, project_id, feedback_data, processed_ids):
         """Save current progress to a file"""
@@ -120,15 +120,22 @@ class FrameIOFeedbackExporter:
     def get_asset_preview(self, asset_id, asset_details):
         """Get preview/thumbnail URL for an asset"""
         try:
-            # First try to get the preview
+            # Check if there's a thumbnail URL directly in the asset details
+            if asset_details and 'thumbnails' in asset_details:
+                thumbnails = asset_details.get('thumbnails', {})
+                if isinstance(thumbnails, dict):
+                    # Try to get the smallest thumbnail first
+                    for size in ['small', 'medium', 'large']:
+                        if size in thumbnails:
+                            return thumbnails[size]
+                elif isinstance(thumbnails, list) and len(thumbnails) > 0:
+                    return thumbnails[0]  # Return first thumbnail if it's a list
+
+            # Fall back to the preview endpoint if no thumbnails found
             url = f"{self.base_url}/assets/{asset_id}/preview"
             preview_data = self.make_request(url)
             if preview_data and 'url' in preview_data:
                 return preview_data['url']
-            
-            # If no preview, try to use the direct asset URL if available
-            if asset_details and 'url' in asset_details:
-                return asset_details['url']
                 
         except requests.exceptions.RequestException as e:
             if not (hasattr(e, 'response') and e.response.status_code == 404):
@@ -324,23 +331,27 @@ class FrameIOFeedbackExporter:
                 }
                 .asset-header { 
                     display: flex; 
-                    flex-direction: column;
+                    align-items: flex-start; 
                     margin-bottom: 15px;
                     gap: 20px;
                 }
                 .thumbnail-container {
-                    width: 960px;
-                    height: 540px;
+                    flex-shrink: 0;
+                    width: 200px;
+                    height: 112px;
                     background: #f0f0f0;
                     border-radius: 4px;
                     overflow: hidden;
                     position: relative;
-                    margin: 0 auto;
+                    transition: opacity 0.2s;
+                }
+                .thumbnail-container:hover {
+                    opacity: 0.9;
                 }
                 .thumbnail { 
                     width: 100%;
                     height: 100%;
-                    object-fit: contain;
+                    object-fit: cover;
                     display: block;
                 }
                 .no-thumbnail {
@@ -357,7 +368,7 @@ class FrameIOFeedbackExporter:
                     min-width: 0;
                 }
                 .asset-name { 
-                    font-size: 1.4em; 
+                    font-size: 1.2em; 
                     font-weight: bold; 
                     margin: 0 0 8px 0;
                     word-break: break-word;
@@ -372,20 +383,19 @@ class FrameIOFeedbackExporter:
                     color: #0066cc; 
                     text-decoration: none;
                     display: inline-block;
-                    padding: 8px 16px;
+                    padding: 4px 8px;
                     background: #f0f5ff;
                     border-radius: 4px;
-                    margin-top: 8px;
                 }
                 .asset-link:hover {
                     background: #e0ebff;
                 }
                 .comments { 
-                    margin-top: 20px;
+                    margin-top: 15px;
                 }
                 .comment { 
                     background: #f8f8f8; 
-                    padding: 16px; 
+                    padding: 12px; 
                     margin: 10px 0; 
                     border-radius: 6px;
                     border-left: 4px solid #ddd;
@@ -394,8 +404,6 @@ class FrameIOFeedbackExporter:
                     color: #666; 
                     font-size: 0.9em; 
                     margin-bottom: 8px;
-                    padding-bottom: 8px;
-                    border-bottom: 1px solid #eee;
                 }
                 .summary { 
                     background: #eef2ff;
@@ -404,22 +412,15 @@ class FrameIOFeedbackExporter:
                     border-radius: 8px;
                     border: 1px solid #dde5ff;
                 }
-                .page-title {
-                    color: #333;
-                    padding: 20px 0;
-                    margin: 0;
-                    text-align: center;
-                    font-size: 2em;
-                }
                 @media print {
-                    .asset { break-inside: avoid; page-break-inside: avoid; }
+                    .asset { break-inside: avoid; }
                     body { background: white; }
                     .asset { box-shadow: none; }
                 }
             </style>
         </head>
         <body>
-            <h1 class="page-title">Frame.io Feedback Report</h1>
+            <h1>Frame.io Feedback Report</h1>
             <div class="summary">
                 <p>Total assets with feedback: {{ feedback_data|length }}</p>
                 <p>Total comments: {{ feedback_data|map(attribute='comments')|map('length')|sum }}</p>
@@ -428,18 +429,18 @@ class FrameIOFeedbackExporter:
             {% for asset in feedback_data %}
             <div class="asset">
                 <div class="asset-header">
-                    <div class="asset-info">
-                        <h2 class="asset-name">{{ asset.asset_name }}</h2>
-                        <div class="asset-type">{{ asset.asset_type }}</div>
-                        <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
-                    </div>
-                    <div class="thumbnail-container">
+                    <a href="{{ asset.asset_url }}" target="_blank" class="thumbnail-container">
                         {% if asset.thumbnail_url %}
                             <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                             <div class="no-thumbnail" style="display: none;">No preview available</div>
                         {% else %}
                             <div class="no-thumbnail">No preview available</div>
                         {% endif %}
+                    </a>
+                    <div class="asset-info">
+                        <h2 class="asset-name">{{ asset.asset_name }}</h2>
+                        <div class="asset-type">{{ asset.asset_type }}</div>
+                        <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
                     </div>
                 </div>
                 <div class="comments">
