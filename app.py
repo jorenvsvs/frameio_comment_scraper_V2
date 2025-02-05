@@ -52,7 +52,31 @@ class FrameIOFeedbackExporter:
                     continue
                 raise
         return None
-
+        
+    def process_folder(self, folder_id, folder_name=""):
+        """Recursively process a folder and its contents"""
+        st.write(f"\n>>> Processing folder: {folder_name} ({folder_id})")
+        assets = []
+        items = self.get_folder_contents(folder_id)
+        
+        for item in items:
+            item_type = item.get('type', '')
+            name = item.get('name', 'Unnamed')
+            item_id = item.get('id')
+            
+            st.write(f"Examining item: {name} ({item_type})")
+            
+            if item_type == 'folder':
+                st.write(f"Found subfolder: {name}")
+                subfolder_assets = self.process_folder(item_id, name)
+                assets.extend(subfolder_assets)
+            elif item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review', 'asset']:
+                st.write(f"Found asset: {name} ({item_type})")
+                assets.append(item)
+        
+        st.write(f"Found {len(assets)} assets in folder {folder_name}")
+        return assets
+        
     def save_progress(self, project_id, feedback_data, processed_ids):
         """Save current progress to a file"""
         data = {
