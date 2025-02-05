@@ -332,13 +332,13 @@ class FrameIOFeedbackExporter:
                     processed_comments = []
                     for comment_idx, comment in enumerate(comments):
                         try:
-                            author_name = comment.get('author', {}).get('name', 'Unknown User')
+                            author_name = self.process_comment_author(comment)
                             comment_text = comment.get('text', 'No comment text')
                             created_at = comment.get('created_at', datetime.now().isoformat())
-                            
+    
                             comment_color = self.get_comment_color(comment_idx)
                             annotations = self.process_comment_annotations(comment, comment_color)
-                            
+    
                             processed_comments.append({
                                 'text': comment_text,
                                 'author': author_name,
@@ -624,6 +624,30 @@ def generate_svg_overlay(self, annotations, image_width=200, image_height=112):
                     border-radius: 8px;
                     border: 1px solid #dde5ff;
                 }
+                .thumbnail-container {
+                    position: relative;
+                    width: 200px;
+                    height: 112px;
+                    background: #f0f0f0;
+                    border-radius: 4px;
+                    overflow: hidden;
+                }
+                
+                .thumbnail {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                    display: block;
+                }
+                
+                .annotation-overlay {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    pointer-events: none;
+                }
             </style>
             <script>
                 function toggleFolder(folderId) {
@@ -692,13 +716,18 @@ def generate_svg_overlay(self, annotations, image_width=200, image_height=112):
                                 </div>
                                 {% if comment.has_annotations %}
                                 <div class="comment-thumbnail">
-                                    <div class="thumbnail-container">
-                                        {% if asset.thumbnail_url %}
-                                            <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
-                                            {{ generate_svg_overlay(comment.annotations) | safe }}
-                                        {% else %}
-                                            <div class="no-thumbnail">No preview available</div>
-                                        {% endif %}
+                                   <div class="thumbnail-container">
+                                        <a href="{{ asset.asset_url }}" target="_blank">
+                                            {% if asset.thumbnail_url %}
+                                                <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}"
+                                                     onerror="this.parentElement.innerHTML='<div class=\'no-thumbnail\'>No preview available</div>';">
+                                                {% if comment.annotations %}
+                                                    {{ generate_svg_overlay(comment.annotations)|safe }}
+                                                {% endif %}
+                                            {% else %}
+                                                <div class="no-thumbnail">No preview available</div>
+                                            {% endif %}
+                                        </a>
                                     </div>
                                 </div>
                                 {% endif %}
