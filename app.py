@@ -117,19 +117,22 @@ class FrameIOFeedbackExporter:
         st.error(f"All attempts to get folder contents failed for folder {folder_id}")
         return []
 
-    def get_asset_preview(self, asset_id):
+    def get_asset_preview(self, asset_id, asset_details):
         """Get preview/thumbnail URL for an asset"""
         try:
+            # First try to get the preview
             url = f"{self.base_url}/assets/{asset_id}/preview"
             preview_data = self.make_request(url)
             if preview_data and 'url' in preview_data:
                 return preview_data['url']
+            
+            # If no preview, try to use the direct asset URL if available
+            if asset_details and 'url' in asset_details:
+                return asset_details['url']
+                
         except requests.exceptions.RequestException as e:
-            # Silently handle missing previews
-            if hasattr(e, 'response') and e.response.status_code == 404:
-                return None
-            # Log other types of errors
-            st.write(f"Error fetching preview for asset {asset_id}: {str(e)}")
+            if not (hasattr(e, 'response') and e.response.status_code == 404):
+                st.write(f"Error fetching preview for asset {asset_id}: {str(e)}")
         return None
 
     def process_folder(self, folder_id, folder_name=""):
@@ -238,7 +241,12 @@ class FrameIOFeedbackExporter:
                         processed_comments = []
                         for comment in comments:
                             try:
-                                author_name = comment.get('author', {}).get('name', 'Unknown User')
+                                # More detailed user information extraction
+                                author = comment.get('author', {})
+                                author_name = author.get('name')
+                                if not author_name:  # Fallback options if name isn't directly available
+                                    author_name = author.get('display_name') or author.get('email') or "Unknown User"
+                                
                                 comment_text = comment.get('text', 'No comment text')
                                 created_at = comment.get('created_at', datetime.now().isoformat())
                                 
@@ -254,7 +262,7 @@ class FrameIOFeedbackExporter:
                         
                         if processed_comments:
                             # Get preview URL for the asset
-                            preview_url = self.get_asset_preview(asset['id'])
+                            preview_url = self.get_asset_preview(asset['id'], asset)
                             
                             feedback_data.append({
                                 'asset_name': asset.get('name', 'Unnamed Asset'),
@@ -316,23 +324,23 @@ class FrameIOFeedbackExporter:
                 }
                 .asset-header { 
                     display: flex; 
-                    align-items: flex-start; 
+                    flex-direction: column;
                     margin-bottom: 15px;
                     gap: 20px;
                 }
                 .thumbnail-container {
-                    flex-shrink: 0;
-                    width: 320px;
-                    height: 180px;
+                    width: 960px;
+                    height: 540px;
                     background: #f0f0f0;
                     border-radius: 4px;
                     overflow: hidden;
                     position: relative;
+                    margin: 0 auto;
                 }
                 .thumbnail { 
                     width: 100%;
                     height: 100%;
-                    object-fit: cover;
+                    object-fit: contain;
                     display: block;
                 }
                 .no-thumbnail {
@@ -349,7 +357,7 @@ class FrameIOFeedbackExporter:
                     min-width: 0;
                 }
                 .asset-name { 
-                    font-size: 1.2em; 
+                    font-size: 1.4em; 
                     font-weight: bold; 
                     margin: 0 0 8px 0;
                     word-break: break-word;
@@ -364,19 +372,20 @@ class FrameIOFeedbackExporter:
                     color: #0066cc; 
                     text-decoration: none;
                     display: inline-block;
-                    padding: 4px 8px;
+                    padding: 8px 16px;
                     background: #f0f5ff;
                     border-radius: 4px;
+                    margin-top: 8px;
                 }
                 .asset-link:hover {
                     background: #e0ebff;
                 }
                 .comments { 
-                    margin-top: 15px;
+                    margin-top: 20px;
                 }
                 .comment { 
                     background: #f8f8f8; 
-                    padding: 12px; 
+                    padding: 16px; 
                     margin: 10px 0; 
                     border-radius: 6px;
                     border-left: 4px solid #ddd;
@@ -385,6 +394,8 @@ class FrameIOFeedbackExporter:
                     color: #666; 
                     font-size: 0.9em; 
                     margin-bottom: 8px;
+                    padding-bottom: 8px;
+                    border-bottom: 1px solid #eee;
                 }
                 .summary { 
                     background: #eef2ff;
@@ -393,15 +404,22 @@ class FrameIOFeedbackExporter:
                     border-radius: 8px;
                     border: 1px solid #dde5ff;
                 }
+                .page-title {
+                    color: #333;
+                    padding: 20px 0;
+                    margin: 0;
+                    text-align: center;
+                    font-size: 2em;
+                }
                 @media print {
-                    .asset { break-inside: avoid; }
+                    .asset { break-inside: avoid; page-break-inside: avoid; }
                     body { background: white; }
                     .asset { box-shadow: none; }
                 }
             </style>
         </head>
         <body>
-            <h1>Frame.io Feedback Report</h1>
+            <h1 class="page-title">Frame.io Feedback Report</h1>
             <div class="summary">
                 <p>Total assets with feedback: {{ feedback_data|length }}</p>
                 <p>Total comments: {{ feedback_data|map(attribute='comments')|map('length')|sum }}</p>
@@ -410,6 +428,11 @@ class FrameIOFeedbackExporter:
             {% for asset in feedback_data %}
             <div class="asset">
                 <div class="asset-header">
+                    <div class="asset-info">
+                        <h2 class="asset-name">{{ asset.asset_name }}</h2>
+                        <div class="asset-type">{{ asset.asset_type }}</div>
+                        <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
+                    </div>
                     <div class="thumbnail-container">
                         {% if asset.thumbnail_url %}
                             <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
@@ -417,11 +440,6 @@ class FrameIOFeedbackExporter:
                         {% else %}
                             <div class="no-thumbnail">No preview available</div>
                         {% endif %}
-                    </div>
-                    <div class="asset-info">
-                        <h2 class="asset-name">{{ asset.asset_name }}</h2>
-                        <div class="asset-type">{{ asset.asset_type }}</div>
-                        <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
                     </div>
                 </div>
                 <div class="comments">
