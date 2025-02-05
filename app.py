@@ -324,6 +324,9 @@ class FrameIOFeedbackExporter:
                                 'color': comment_color,
                                 'has_annotations': bool(annotations)
                             })
+                        except Exception as e:
+                            st.write(f"Error processing comment: {str(e)}")
+                            continue
                     
                     if processed_comments:
                         folder_feedback[folder_path].append({
