@@ -36,62 +36,34 @@ class FrameIOFeedbackExporter:
             st.error(f"Error fetching team projects: {str(e)}")
             return []
 
-    def get_project_content(self, project_id):
-        """Get the root content of a project"""
-        url = f"{self.base_url}/projects/{project_id}"
-        try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            project_data = response.json()
-            root_id = project_data.get('root_folder_id')
-            st.write(f"Found project root folder ID: {root_id}")
-            return root_id
-        except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching project content: {str(e)}")
-            return None
-
-    def get_folder_items(self, folder_id):
-        """Get items in a folder"""
-        url = f"{self.base_url}/items/{folder_id}/children"
+    def get_project_items(self, project_id):
+        """Get all items in a project directly"""
+        url = f"{self.base_url}/projects/{project_id}/items"
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
             items = response.json()
-            st.write(f"Found {len(items)} items in folder {folder_id}")
+            st.write(f"Found {len(items)} items directly in project")
             return items
         except requests.exceptions.RequestException as e:
-            st.error(f"Error fetching folder items: {str(e)}")
+            st.error(f"Error fetching project items: {str(e)}")
             return []
 
     def get_all_assets(self, project_id):
-        """Recursively get all assets in a project"""
+        """Get all assets in a project"""
         st.write("Starting to collect all assets...")
         assets = []
-        root_folder_id = self.get_project_content(project_id)
-        if root_folder_id:
-            st.write("Traversing root folder...")
-            assets.extend(self._traverse_folder(root_folder_id))
-        st.write(f"Total assets found: {len(assets)}")
-        return assets
-
-    def _traverse_folder(self, folder_id):
-        """Recursively traverse a folder and collect assets"""
-        assets = []
-        items = self.get_folder_items(folder_id)
+        items = self.get_project_items(project_id)
         
         for item in items:
             item_type = item.get('type', '')
             st.write(f"Found item: {item.get('name', 'Unnamed')} (Type: {item_type})")
             
-            if item_type == 'folder':
-                st.write(f"Traversing subfolder: {item.get('name', 'Unnamed')}")
-                subfolder_assets = self._traverse_folder(item['id'])
-                assets.extend(subfolder_assets)
-                st.write(f"Found {len(subfolder_assets)} assets in subfolder {item.get('name', 'Unnamed')}")
-            elif item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review']:
+            if item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review']:
                 st.write(f"Adding asset: {item.get('name', 'Unnamed')}")
                 assets.append(item)
         
+        st.write(f"Total assets found: {len(assets)}")
         return assets
 
     def get_asset_comments(self, asset_id):
@@ -101,7 +73,8 @@ class FrameIOFeedbackExporter:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
             comments = response.json()
-            st.write(f"Found {len(comments)} comments for asset {asset_id}")
+            if comments:
+                st.write(f"Found {len(comments)} comments for asset {asset_id}")
             return comments
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching comments: {str(e)}")
