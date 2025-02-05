@@ -53,7 +53,7 @@ class FrameIOFeedbackExporter:
 
     def get_item_details(self, item_id):
         """Get detailed information about an item"""
-        url = f"{self.base_url}/items/{item_id}"
+        url = f"{self.base_url}/assets/{item_id}"  # Changed from /items to /assets
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
@@ -74,16 +74,34 @@ class FrameIOFeedbackExporter:
             # Get detailed information for each item
             detailed_items = []
             for item in items:
-                item_id = item.get('id')
-                if item_id:
-                    item_details = self.get_item_details(item_id)
+                # Use asset_id instead of id
+                asset_id = item.get('asset_id')
+                if asset_id:
+                    st.write(f"Fetching details for asset ID: {asset_id}")
+                    item_details = self.get_item_details(asset_id)
                     if item_details:
                         detailed_items.append(item_details)
                         st.write(f"Found item: {item_details.get('name', 'Unnamed')} (Type: {item_details.get('type', 'unknown')})")
+                else:
+                    st.write("No asset_id found for item")
             
             return detailed_items
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching review link items: {str(e)}")
+            return []
+
+    def get_asset_comments(self, asset_id):
+        """Fetch all comments for an asset"""
+        url = f"{self.base_url}/assets/{asset_id}/comments"  # Changed from /items to /assets
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            comments = response.json()
+            if comments:
+                st.write(f"Found {len(comments)} comments for asset {asset_id}")
+            return comments
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error fetching comments: {str(e)}")
             return []
 
     def get_all_assets(self, project_id):
