@@ -16,11 +16,11 @@ class FrameIOFeedbackExporter:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
-        self.request_delay = 10.0     # 10 seconds between requests
+        self.request_delay = 2.0     # 10 seconds between requests
         self.max_retries = 3
-        self.retry_delay = 60         # 1 minute initial retry delay
-        self.chunk_size = 10          # Process 10 assets at a time
-        self.chunk_delay = 300        # 5 minutes between chunks
+        self.retry_delay = 20         # 1 minute initial retry delay
+        self.chunk_size = 20          # Process 10 assets at a time
+        self.chunk_delay = 60        # 5 minutes between chunks
 
     def save_progress(self, project_id, feedback_data, processed_ids):
         """Save current progress to a file"""
@@ -124,7 +124,11 @@ class FrameIOFeedbackExporter:
             preview_data = self.make_request(url)
             if preview_data and 'url' in preview_data:
                 return preview_data['url']
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
+            # Silently handle missing previews
+            if hasattr(e, 'response') and e.response.status_code == 404:
+                return None
+            # Log other types of errors
             st.write(f"Error fetching preview for asset {asset_id}: {str(e)}")
         return None
 
