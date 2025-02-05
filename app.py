@@ -51,6 +51,17 @@ class FrameIOFeedbackExporter:
             st.write(f"Response content: {e.response.content if hasattr(e, 'response') else 'unknown'}")
             return []
 
+    def get_item_details(self, item_id):
+        """Get detailed information about an item"""
+        url = f"{self.base_url}/items/{item_id}"
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error fetching item details: {str(e)}")
+            return None
+
     def get_asset_items(self, review_link_id):
         """Get items in a review link"""
         url = f"{self.base_url}/review_links/{review_link_id}/items"
@@ -59,7 +70,18 @@ class FrameIOFeedbackExporter:
             response.raise_for_status()
             items = response.json()
             st.write(f"Found {len(items)} items in review link {review_link_id}")
-            return items
+            
+            # Get detailed information for each item
+            detailed_items = []
+            for item in items:
+                item_id = item.get('id')
+                if item_id:
+                    item_details = self.get_item_details(item_id)
+                    if item_details:
+                        detailed_items.append(item_details)
+                        st.write(f"Found item: {item_details.get('name', 'Unnamed')} (Type: {item_details.get('type', 'unknown')})")
+            
+            return detailed_items
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching review link items: {str(e)}")
             return []
@@ -81,10 +103,12 @@ class FrameIOFeedbackExporter:
             items = self.get_asset_items(review_link_id)
             for item in items:
                 item_type = item.get('type', '')
-                st.write(f"Found item: {item.get('name', 'Unnamed')} (Type: {item_type})")
+                name = item.get('name', 'Unnamed')
+                st.write(f"Processing item: {name} (Type: {item_type})")
                 
-                if item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review']:
-                    st.write(f"Adding asset: {item.get('name', 'Unnamed')}")
+                # Accept more types of content
+                if item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review', 'asset']:
+                    st.write(f"Adding asset: {name}")
                     assets.append(item)
         
         st.write(f"Total assets found: {len(assets)}")
