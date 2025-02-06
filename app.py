@@ -87,23 +87,29 @@ class FrameIOFeedbackExporter:
         return True
 
     def get_folder_path(self, asset, folders=None):
+        """Get the full folder path for an asset"""
         if folders is None:
             folders = {}
+        
+        # Cache to avoid repeated lookups
+        folder_cache_key = f"{asset.get('id')}_{asset.get('parent_id')}"
+        if folder_cache_key in folders:
+            return folders[folder_cache_key]
         
         parent_id = asset.get('parent_id')
         if not parent_id:
             return "/"
             
-        if parent_id not in folders:
-            try:
-                parent = self.get_item_details(parent_id)
-                if parent:
-                    folders[parent_id] = parent
-                    if parent.get('type') == 'folder':
-                        parent_path = self.get_folder_path(parent, folders)
-                        return f"{parent_path}/{parent.get('name', 'Unknown Folder')}"
-            except Exception as e:
-                st.write(f"Error getting folder path: {str(e)}")
+        try:
+            parent = self.get_item_details(parent_id)
+            if parent and parent.get('type') == 'folder':
+                parent_path = self.get_folder_path(parent, folders)
+                full_path = f"{parent_path}/{parent.get('name', 'Unknown Folder')}"
+                folders[folder_cache_key] = full_path
+                return full_path
+        except Exception as e:
+            st.write(f"Error getting folder path: {str(e)}")
+        
         return "/"
 
     def get_item_details(self, item_id):
