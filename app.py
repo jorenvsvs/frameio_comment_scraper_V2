@@ -853,5 +853,5 @@ class FrameIOFeedbackExporter:
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
