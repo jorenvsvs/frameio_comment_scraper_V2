@@ -168,22 +168,17 @@ class FrameIOFeedbackExporter:
         return assets
 
     def get_asset_preview(self, asset_id, asset_details):
-        st.write(f"Asset details for preview: {json.dumps(asset_details, indent=2)}")
-        
         try:
+            comments = self.get_asset_comments(asset_id)
+            if comments and comments[0].get('thumb'):
+                return comments[0]['thumb']
+                
+            # Fall back to original preview methods
             url = f"{self.base_url}/assets/{asset_id}/preview"
             preview_data = self.make_request(url)
-            st.write(f"Preview endpoint response: {json.dumps(preview_data, indent=2)}")
-            
-            if preview_data and isinstance(preview_data, dict):
-                if 'url' in preview_data:
-                    return preview_data['url']
-            
-            if asset_details:
-                for key in ['url', 'source_url', 'original_url', 'download_url']:
-                    if key in asset_details:
-                        return asset_details[key]
-            
+            if preview_data and isinstance(preview_data, dict) and 'url' in preview_data:
+                return preview_data['url']
+                
         except Exception as e:
             st.write(f"Error getting preview: {str(e)}")
         return None
