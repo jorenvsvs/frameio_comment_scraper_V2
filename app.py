@@ -785,7 +785,8 @@ def main():
     
     if api_token:
         try:
-            exporter = FrameIOFeedbackExporter(api_token, include_old_folders)
+            exporter = FrameIOFeedbackExporter(token=api_token, include_old_folders=include_old_folders)
+        
             
             # Fetch and display teams
             teams = exporter.get_teams()
