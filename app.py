@@ -21,6 +21,7 @@ class FrameIOFeedbackExporter:
         self.retry_delay = 2         # 10 seconds retry delay
         self.chunk_size = 30          # Process 30 assets at a time
         self.chunk_delay = 2         # 20 seconds between chunks
+        self.include_old_folders = include_old_folders
 
     def get_comment_color(self, comment_index):
         """Generate a consistent color for comments"""
@@ -53,8 +54,18 @@ class FrameIOFeedbackExporter:
                 raise
         return None
         
+    def should_process_folder(self, folder_name):
+        """Determine if a folder should be processed based on settings"""
+        if not self.include_old_folders and 'old' in folder_name.lower():
+            st.write(f"Skipping folder '{folder_name}' (contains 'old')")
+            return False
+        return True
+
     def process_folder(self, folder_id, folder_name=""):
         """Recursively process a folder and its contents"""
+        if not self.should_process_folder(folder_name):
+            return []
+
         st.write(f"\n>>> Processing folder: {folder_name} ({folder_id})")
         assets = []
         items = self.get_folder_contents(folder_id)
@@ -67,9 +78,12 @@ class FrameIOFeedbackExporter:
             st.write(f"Examining item: {name} ({item_type})")
             
             if item_type == 'folder':
-                st.write(f"Found subfolder: {name}")
-                subfolder_assets = self.process_folder(item_id, name)
-                assets.extend(subfolder_assets)
+                if self.should_process_folder(name):
+                    st.write(f"Found subfolder: {name}")
+                    subfolder_assets = self.process_folder(item_id, name)
+                    assets.extend(subfolder_assets)
+                else:
+                    st.write(f"Skipping subfolder: {name}")
             elif item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review', 'asset']:
                 st.write(f"Found asset: {name} ({item_type})")
                 assets.append(item)
@@ -758,6 +772,9 @@ def main():
     You'll need your Frame.io API token to use this tool.
     """)
     
+    # Add checkbox for including old folders
+    include_old_folders = st.checkbox('Include folders containing "old" in their name', value=False)
+    
     # API Token input with secure handling
     api_token = st.text_input(
         "Enter your Frame.io API Token",
@@ -767,7 +784,7 @@ def main():
     
     if api_token:
         try:
-            exporter = FrameIOFeedbackExporter(api_token)
+            exporter = FrameIOFeedbackExporter(api_token, include_old_folders)
             
             # Fetch and display teams
             teams = exporter.get_teams()
