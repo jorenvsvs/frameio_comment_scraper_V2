@@ -649,52 +649,37 @@ class FrameIOFeedbackExporter:
 def main():
     st.set_page_config(page_title="Frame.io Feedback Exporter", page_icon="📋", layout="wide")
     
-    st.title("Frame.io Feedback Exporter")
-    st.write("""
-    Generate a comprehensive report of all comments from your Frame.io projects.
-    You'll need your Frame.io API token to use this tool.
-    """)
+    st.sidebar.title("Frame.io Feedback Exporter")
+    st.sidebar.write("Generate a comprehensive report of Frame.io comments.")
     
-    include_old_folders = st.checkbox('Include folders containing "old" in their name', value=False)
-    
-    api_token = st.text_input(
-        "Enter your Frame.io API Token",
-        type="password",
-        help="Find this in your Frame.io account settings under Developer section"
-    )
+    include_old_folders = st.sidebar.checkbox('Include "old" folders', value=False)
+    api_token = st.sidebar.text_input("Frame.io API Token", type="password")
     
     if api_token:
         try:
             exporter = FrameIOFeedbackExporter(token=api_token, include_old_folders=include_old_folders)
-            
             teams = exporter.get_teams()
+            
             if teams:
                 team_options = {t['name']: t['id'] for t in teams}
-                selected_team = st.selectbox(
-                    "Select Team",
-                    options=list(team_options.keys())
-                )
+                selected_team = st.sidebar.selectbox("Select Team", options=list(team_options.keys()))
                 
                 if selected_team:
                     team_id = team_options[selected_team]
                     projects = exporter.get_team_projects(team_id)
+                    
                     if projects:
                         project_options = {p['name']: p['id'] for p in projects}
-                        selected_project = st.selectbox(
-                            "Select Project",
-                            options=list(project_options.keys())
-                        )
+                        selected_project = st.sidebar.selectbox("Select Project", options=list(project_options.keys()))
                         
-                        if st.button("Generate Report"):
-                            with st.spinner("Generating report... This might take a few minutes for large projects"):
+                        if st.sidebar.button("Generate Report"):
+                            with st.spinner("Generating report..."):
                                 project_id = project_options[selected_project]
                                 html_content = exporter.generate_report(project_id)
                                 
                                 b64 = base64.b64encode(html_content.encode()).decode()
                                 href = f'<a href="data:text/html;base64,{b64}" download="frameio_feedback_report.html">Download Report</a>'
                                 st.markdown(href, unsafe_allow_html=True)
-                                
-                                st.write("### Preview:")
                                 st.components.v1.html(html_content, height=600, scrolling=True)
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
