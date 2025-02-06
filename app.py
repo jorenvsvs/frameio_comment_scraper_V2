@@ -22,6 +22,7 @@ class FrameIOFeedbackExporter:
         self.retry_delay = 5
         self.chunk_size = 50
         self.chunk_delay = 1
+        self.folder_cache = {} 
 
     def make_request(self, url, method='GET'):
         for attempt in range(self.max_retries):
@@ -88,24 +89,19 @@ class FrameIOFeedbackExporter:
 
     def get_folder_path(self, asset, folders=None):
         """Get the full folder path for an asset"""
-        if folders is None:
-            folders = {}
-        
-        # Cache to avoid repeated lookups
-        folder_cache_key = f"{asset.get('id')}_{asset.get('parent_id')}"
-        if folder_cache_key in folders:
-            return folders[folder_cache_key]
-        
         parent_id = asset.get('parent_id')
         if not parent_id:
             return "/"
             
+        if parent_id in self.folder_cache:
+            return self.folder_cache[parent_id]
+            
         try:
             parent = self.get_item_details(parent_id)
             if parent and parent.get('type') == 'folder':
-                parent_path = self.get_folder_path(parent, folders)
+                parent_path = self.get_folder_path(parent)
                 full_path = f"{parent_path}/{parent.get('name', 'Unknown Folder')}"
-                folders[folder_cache_key] = full_path
+                self.folder_cache[parent_id] = full_path
                 return full_path
         except Exception as e:
             st.write(f"Error getting folder path: {str(e)}")
