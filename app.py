@@ -190,18 +190,10 @@ class FrameIOFeedbackExporter:
 
     def process_comment_author(self, comment):
         try:
-            author = comment.get('author', {})
-            st.write("Author data:", json.dumps(author, indent=2))
-            
-            if not author:
-                return comment.get('user_name') or comment.get('email') or "Unknown User"
-            
-            name = (author.get('name') or 
-                    author.get('display_name') or 
-                    author.get('full_name') or 
-                    author.get('email') or 
-                    "Unknown User")
-            return name
+            anon_user = comment.get('anonymous_user', {})
+            if anon_user:
+                return anon_user.get('name') or anon_user.get('email') or "Unknown User"
+            return "Unknown User"
         except Exception as e:
             st.write(f"Error processing author: {str(e)}")
             return "Unknown User"
@@ -339,6 +331,20 @@ class FrameIOFeedbackExporter:
         st.write(f"\nTotal assets found: {len(all_assets)}")
         return all_assets
 
+    def get_comment_color(self, comment_index):
+        """Generate a consistent color for comments"""
+        colors = [
+            '#FF6B6B',  # Red
+            '#4ECDC4',  # Teal
+            '#45B7D1',  # Blue
+            '#96CEB4',  # Green
+            '#FFAD60',  # Orange
+            '#9D94FF',  # Purple
+            '#FF9999',  # Pink
+            '#88D8B0'   # Mint
+        ]
+        return colors[comment_index % len(colors)]
+        
     def generate_report(self, project_id):
         assets = self.get_all_assets(project_id)
         feedback_data, processed_ids = self.load_progress(project_id)
