@@ -252,9 +252,12 @@ class FrameIOFeedbackExporter:
     def get_asset_comments(self, asset_id):
         """Fetch all comments for an asset"""
         try:
-            comments = self.make_request(f"{self.base_url}/assets/{asset_id}/comments")
+            url = f"{self.base_url}/assets/{asset_id}/comments"
+            comments = self.make_request(url)
             if comments:
                 st.write(f"Found {len(comments)} comments for asset {asset_id}")
+                # Debug raw comment data
+                st.write("Raw comment data:", json.dumps(comments, indent=2))
             return comments
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching comments: {str(e)}")
@@ -322,15 +325,24 @@ class FrameIOFeedbackExporter:
         
     def process_comment_author(self, comment):
         """Extract author name from comment with better debugging"""
-        author = comment.get('author', {})
-        st.write("Author data:", author)  # Debug line
-        
-        # Try different possible fields
-        name = (author.get('name') or 
-                author.get('display_name') or 
-                author.get('full_name') or 
-                author.get('email', 'Unknown User'))
-        return name
+        try:
+            author = comment.get('author', {})
+            st.write("Author data:", json.dumps(author, indent=2))
+            
+            # If author is empty, try to get it from the comment directly
+            if not author:
+                return comment.get('user_name') or comment.get('email') or "Unknown User"
+            
+            # Try different possible fields
+            name = (author.get('name') or 
+                    author.get('display_name') or 
+                    author.get('full_name') or 
+                    author.get('email') or 
+                    "Unknown User")
+            return name
+        except Exception as e:
+            st.write(f"Error processing author: {str(e)}")
+            return "Unknown User"
         
     def generate_report(self, project_id):
         """Generate an HTML report of all comments"""
@@ -342,7 +354,7 @@ class FrameIOFeedbackExporter:
         # Filter out already processed assets and organize them
         assets_to_process = [a for a in assets if a['id'] not in processed_ids]
         organized_assets = self.organize_assets_by_folder(assets_to_process)
-
+    
         # Process assets in order
         folder_feedback = {}
         
@@ -352,7 +364,7 @@ class FrameIOFeedbackExporter:
             
             if folder_path not in folder_feedback:
                 folder_feedback[folder_path] = []
-
+    
             try:
                 comments = self.get_asset_comments(asset['id'])
                 if comments:
@@ -387,454 +399,459 @@ class FrameIOFeedbackExporter:
                             'asset_url': f"https://app.frame.io/player/{asset['id']}",
                             'comments': processed_comments
                         })
-
+    
             except Exception as e:
                 st.error(f"Error processing asset {asset.get('name', 'Unnamed')}: {str(e)}")
                 continue
-
-        return self.render_html_report(folder_feedback)
-
-
-
-def process_comment_author(self, comment):
-    """Extract author name from comment with better debugging"""
-    author = comment.get('author', {})
-    st.write("Author data:", author)  # Debug line
     
-    # Try different possible fields
-    name = (author.get('name') or 
-            author.get('display_name') or 
-            author.get('full_name') or 
-            author.get('email', 'Unknown User'))
-    return name
-
-def get_asset_preview(self, asset_id, asset_details):
-    """Get preview/thumbnail URL for an asset with better debugging"""
-    st.write(f"Asset details for preview: {json.dumps(asset_details, indent=2)}")  # Debug line
-    
-    try:
-        # First try to get the preview URL
-        url = f"{self.base_url}/assets/{asset_id}/preview"
-        preview_data = self.make_request(url)
-        st.write(f"Preview endpoint response: {json.dumps(preview_data, indent=2)}")  # Debug line
-        
-        if preview_data and isinstance(preview_data, dict):
-            if 'url' in preview_data:
-                return preview_data['url']
-        
-        # If no preview, try to get the source URL
-        if asset_details:
-            for key in ['url', 'source_url', 'original_url', 'download_url']:
-                if key in asset_details:
-                    return asset_details[key]
-        
-    except Exception as e:
-        st.write(f"Error getting preview: {str(e)}")
-    return None
-
-def generate_svg_overlay(self, annotations, image_width=200, image_height=112):
-    """Generate SVG overlay for annotations"""
-    if not annotations:
-        return ""
-    
-    st.write(f"Generating SVG for annotations: {json.dumps(annotations, indent=2)}")  # Debug line
-    
-def scale_point(point, dimension):
-    """Scale point to percentage"""
-    return (point * 100.0) / dimension
-    
-    svg_paths = []
-    for ann in annotations:
-        if ann['type'] == 'rectangle':
-            x = scale_point(ann['x'], image_width)
-            y = scale_point(ann['y'], image_height)
-            width = scale_point(ann['width'], image_width)
-            height = scale_point(ann['height'], image_height)
-            svg_paths.append(
-                f'<rect x="{x}%" y="{y}%" width="{width}%" height="{height}%" '
-                f'fill="none" stroke="{ann["color"]}" stroke-width="2" />'
-            )
-        elif ann['type'] == 'arrow':
-            if ann['points']:
-                start = ann['points'][0]
-                end = ann['points'][-1]
-                x1 = scale_point(start[0], image_width)
-                y1 = scale_point(start[1], image_height)
-                x2 = scale_point(end[0], image_width)
-                y2 = scale_point(end[1], image_height)
-                svg_paths.append(
-                    f'<line x1="{x1}%" y1="{y1}%" x2="{x2}%" y2="{y2}%" '
-                    f'stroke="{ann["color"]}" stroke-width="2" marker-end="url(#arrow)" />'
-                )
-        elif ann['type'] == 'freehand':
-            if ann['points']:
-                points = [(scale_point(p[0], image_width), 
-                          scale_point(p[1], image_height)) for p in ann['points']]
-                path_d = f'M {points[0][0]},{points[0][1]}'
-                for p in points[1:]:
-                    path_d += f' L {p[0]},{p[1]}'
-                svg_paths.append(
-                    f'<path d="{path_d}" fill="none" '
-                    f'stroke="{ann["color"]}" stroke-width="2" />'
-                )
-    
-    if svg_paths:
-        markers = '''
-            <defs>
-                <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
-                    orient="auto" markerUnits="strokeWidth">
-                    <path d="M0,0 L0,6 L9,3 z" fill="currentColor"/>
-                </marker>
-            </defs>
-        '''
-        return f'''
-            <svg class="annotation-overlay" viewBox="0 0 100 100" 
-                 preserveAspectRatio="none" 
-                 style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
-                {markers}
-                {" ".join(svg_paths)}
-            </svg>
-        '''
-    return ""
-    
-def render_html_report(self, folder_feedback):
-    """Render the HTML report using a template"""
-    template_str = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Frame.io Feedback Report</title>
-        <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                margin: 20px;
-                background: #f5f5f5;
-            }
-            .folder-section {
-                margin: 30px 0;
-                background: white;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                overflow: hidden;
-            }
-            .folder-header {
-                padding: 20px;
-                background: #f8f9fa;
-                cursor: pointer;
-                user-select: none;
-                display: flex;
-                align-items: center;
-                border-bottom: 1px solid #eee;
-            }
-            .folder-header:hover {
-                background: #f0f0f0;
-            }
-            .folder-title {
-                font-size: 1.2em;
-                color: #333;
-                margin: 0;
-                flex-grow: 1;
-            }
-            .folder-content {
-                max-height: 0;
-                overflow: hidden;
-                transition: max-height 0.3s ease-out;
-            }
-            .folder-content.open {
-                max-height: none;
-            }
-            .folder-toggle {
-                margin-right: 10px;
-                width: 20px;
-                height: 20px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: bold;
-                transition: transform 0.3s ease;
-            }
-            .folder-toggle.open {
-                transform: rotate(90deg);
-            }
-            .folder-count {
-                background: #e9ecef;
-                padding: 4px 8px;
-                border-radius: 12px;
-                font-size: 0.9em;
-                color: #666;
-                margin-left: 10px;
-            }
-            .asset { 
-                border-bottom: 1px solid #eee;
-                padding: 20px;
-            }
-            .asset:last-child {
-                border-bottom: none;
-            }
-            .asset-header { 
-                display: flex; 
-                align-items: flex-start; 
-                margin-bottom: 15px;
-                gap: 20px;
-            }
-            .thumbnail-container {
-                flex-shrink: 0;
-                width: 200px;
-                height: 112px;
-                background: #f0f0f0;
-                border-radius: 4px;
-                overflow: hidden;
-                position: relative;
-            }
-            .thumbnail-container:hover {
-                opacity: 0.9;
-            }
-            .thumbnail { 
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                display: block;
-            }
-            .asset-info { 
-                flex-grow: 1;
-            }
-            .asset-name { 
-                font-size: 1.2em; 
-                font-weight: bold; 
-                margin: 0 0 8px 0;
-            }
-            .asset-type {
-                color: #666;
-                font-size: 0.9em;
-                margin-bottom: 8px;
-            }
-            .asset-link { 
-                color: #0066cc; 
-                text-decoration: none;
-                display: inline-block;
-                padding: 4px 8px;
-                background: #f0f5ff;
-                border-radius: 4px;
-            }
-            .comments { 
-                margin-top: 15px;
-            }
-            .comment { 
-                background: #f8f8f8; 
-                padding: 12px; 
-                margin: 10px 0; 
-                border-radius: 6px;
-                border-left: 4px solid #ddd;
-            }
-            .comment.has-annotation {
-                background: #ffffff;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .comment-meta { 
-                color: #666; 
-                font-size: 0.9em; 
-                margin-bottom: 8px;
-            }
-            .no-thumbnail {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 100%;
-                height: 100%;
-                color: #999;
-                font-size: 0.9em;
-            }
-            .summary { 
-                background: #eef2ff;
-                padding: 20px;
-                margin-bottom: 30px;
-                border-radius: 8px;
-                border: 1px solid #dde5ff;
-            }
-            .thumbnail-container {
-                position: relative;
-                width: 200px;
-                height: 112px;
-                background: #f0f0f0;
-                border-radius: 4px;
-                overflow: hidden;
-            }
-            
-            .thumbnail {
-                width: 100%;
-                height: 100%;
-                object-fit: contain;
-                display: block;
-            }
-            
-            .annotation-overlay {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-            }
-        </style>
-        <script>
-            function toggleFolder(folderId) {
-                const header = document.querySelector(`#folder-${folderId} .folder-header`);
-                const content = document.querySelector(`#folder-${folderId} .folder-content`);
-                const toggle = document.querySelector(`#folder-${folderId} .folder-toggle`);
-                
-                content.classList.toggle('open');
-                toggle.classList.toggle('open');
-                
-                // Save state to localStorage
-                const isOpen = content.classList.contains('open');
-                localStorage.setItem(`folder-${folderId}`, isOpen);
-            }
-
-            // Restore folder states on page load
-            window.onload = function() {
-                document.querySelectorAll('.folder-section').forEach(folder => {
-                    const folderId = folder.id.split('-')[1];
-                    const isOpen = localStorage.getItem(`folder-${folderId}`) === 'true';
-                    if (isOpen) {
-                        folder.querySelector('.folder-content').classList.add('open');
-                        folder.querySelector('.folder-toggle').classList.add('open');
-                    }
-                });
-            }
-        </script>
-    </head>
-    <body>
-        <h1>Frame.io Feedback Report</h1>
-        <div class="summary">
-            <p>Total folders with feedback: {{ folder_feedback.keys()|length }}</p>
-            <p>Total assets with feedback: {{ folder_feedback.values()|map('length')|sum }}</p>
-            <p>Generated: {{ now }}</p>
-        </div>
-        {% for folder_path, assets in folder_feedback.items()|sort %}
-        <div class="folder-section" id="folder-{{ loop.index }}">
-            <div class="folder-header" onclick="toggleFolder('{{ loop.index }}')">
-                <div class="folder-toggle">▶</div>
-                <h2 class="folder-title">{{ folder_path }}</h2>
-                <span class="folder-count">{{ assets|length }} asset{% if assets|length != 1 %}s{% endif %}</span>
-            </div>
-            <div class="folder-content">
-                {% for asset in assets %}
-                <div class="asset">
-                    <div class="asset-header">
-                        <a href="{{ asset.asset_url }}" target="_blank" class="thumbnail-container">
-                            {% if asset.thumbnail_url %}
-                                <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
-                            {% else %}
-                                <div class="no-thumbnail">No preview available</div>
-                            {% endif %}
-                        </a>
-                        <div class="asset-info">
-                            <h2 class="asset-name">{{ asset.asset_name }}</h2>
-                            <div class="asset-type">{{ asset.asset_type }}</div>
-                            <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
-                        </div>
-                    </div>
-                    <div class="comments">
-                        {% for comment in asset.comments %}
-                        <div class="comment {% if comment.has_annotations %}has-annotation{% endif %}" 
-                             style="border-left-color: {{ comment.color }}; {% if comment.has_annotations %}border-width: 4px;{% endif %}">
-                            <div class="comment-meta" style="color: {{ comment.color }};">
-                                <strong>{{ comment.author }}</strong> - {{ comment.timestamp }}
-                            </div>
-                            {% if comment.has_annotations %}
-                            <div class="comment-thumbnail">
-                               <div class="thumbnail-container">
-                                    <a href="{{ asset.asset_url }}" target="_blank">
-                                        {% if asset.thumbnail_url %}
-                                            <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}"
-                                                 onerror="this.parentElement.innerHTML='<div class=\'no-thumbnail\'>No preview available</div>';">
-                                            {% if comment.annotations %}
-                                                {{ generate_svg_overlay(comment.annotations)|safe }}
-                                            {% endif %}
-                                        {% else %}
-                                            <div class="no-thumbnail">No preview available</div>
-                                        {% endif %}
-                                    </a>
-                                </div>
-                            </div>
-                            {% endif %}
-                            {{ comment.text }}
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endfor %}
-    </body>
-    </html>
-    """
-    
-    return Template(template_str).render(
-        folder_feedback=folder_feedback,
-        now=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    )
-
-def main():
-    st.set_page_config(page_title="Frame.io Feedback Exporter", page_icon="📋", layout="wide")
-    
-    st.title("Frame.io Feedback Exporter")
-    st.write("""
-    Generate a comprehensive report of all comments from your Frame.io projects.
-    You'll need your Frame.io API token to use this tool.
-    """)
-    
-    # Add checkbox for including old folders
-    include_old_folders = st.checkbox('Include folders containing "old" in their name', value=False)
-    
-    # API Token input with secure handling
-    api_token = st.text_input(
-        "Enter your Frame.io API Token",
-        type="password",
-        help="Find this in your Frame.io account settings under Developer section"
-    )
-    
-    if api_token:
         try:
-            exporter = FrameIOFeedbackExporter(token=api_token, include_old_folders=include_old_folders)
-        
-            
-            # Fetch and display teams
-            teams = exporter.get_teams()
-            if teams:
-                team_options = {t['name']: t['id'] for t in teams}
-                selected_team = st.selectbox(
-                    "Select Team",
-                    options=list(team_options.keys())
-                )
-                
-                # Fetch and display projects for selected team
-                if selected_team:
-                    team_id = team_options[selected_team]
-                    projects = exporter.get_team_projects(team_id)
-                    if projects:
-                        project_options = {p['name']: p['id'] for p in projects}
-                        selected_project = st.selectbox(
-                            "Select Project",
-                            options=list(project_options.keys())
-                        )
-                        
-                        if st.button("Generate Report"):
-                            with st.spinner("Generating report... This might take a few minutes for large projects"):
-                                project_id = project_options[selected_project]
-                                html_content = exporter.generate_report(project_id)
-                                
-                                # Create download button for HTML
-                                b64 = base64.b64encode(html_content.encode()).decode()
-                                href = f'<a href="data:text/html;base64,{b64}" download="frameio_feedback_report.html">Download Report</a>'
-                                st.markdown(href, unsafe_allow_html=True)
-                                
-                                # Preview
-                                st.write("### Preview:")
-                                st.components.v1.html(html_content, height=600, scrolling=True)
+            return self.render_html_report(folder_feedback)
         except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
+            st.error(f"Error rendering HTML report: {str(e)}")
+            st.write("folder_feedback data:", json.dumps(folder_feedback, indent=2))
+            raise
+
+
+
+    def process_comment_author(self, comment):
+        """Extract author name from comment with better debugging"""
+        author = comment.get('author', {})
+        st.write("Author data:", author)  # Debug line
+        
+        # Try different possible fields
+        name = (author.get('name') or 
+                author.get('display_name') or 
+                author.get('full_name') or 
+                author.get('email', 'Unknown User'))
+        return name
+    
+    def get_asset_preview(self, asset_id, asset_details):
+        """Get preview/thumbnail URL for an asset with better debugging"""
+        st.write(f"Asset details for preview: {json.dumps(asset_details, indent=2)}")  # Debug line
+        
+        try:
+            # First try to get the preview URL
+            url = f"{self.base_url}/assets/{asset_id}/preview"
+            preview_data = self.make_request(url)
+            st.write(f"Preview endpoint response: {json.dumps(preview_data, indent=2)}")  # Debug line
+            
+            if preview_data and isinstance(preview_data, dict):
+                if 'url' in preview_data:
+                    return preview_data['url']
+            
+            # If no preview, try to get the source URL
+            if asset_details:
+                for key in ['url', 'source_url', 'original_url', 'download_url']:
+                    if key in asset_details:
+                        return asset_details[key]
+            
+        except Exception as e:
+            st.write(f"Error getting preview: {str(e)}")
+        return None
+    
+    def generate_svg_overlay(self, annotations, image_width=200, image_height=112):
+        """Generate SVG overlay for annotations"""
+        if not annotations:
+            return ""
+        
+        st.write(f"Generating SVG for annotations: {json.dumps(annotations, indent=2)}")  # Debug line
+        
+    def scale_point(point, dimension):
+        """Scale point to percentage"""
+        return (point * 100.0) / dimension
+        
+        svg_paths = []
+        for ann in annotations:
+            if ann['type'] == 'rectangle':
+                x = scale_point(ann['x'], image_width)
+                y = scale_point(ann['y'], image_height)
+                width = scale_point(ann['width'], image_width)
+                height = scale_point(ann['height'], image_height)
+                svg_paths.append(
+                    f'<rect x="{x}%" y="{y}%" width="{width}%" height="{height}%" '
+                    f'fill="none" stroke="{ann["color"]}" stroke-width="2" />'
+                )
+            elif ann['type'] == 'arrow':
+                if ann['points']:
+                    start = ann['points'][0]
+                    end = ann['points'][-1]
+                    x1 = scale_point(start[0], image_width)
+                    y1 = scale_point(start[1], image_height)
+                    x2 = scale_point(end[0], image_width)
+                    y2 = scale_point(end[1], image_height)
+                    svg_paths.append(
+                        f'<line x1="{x1}%" y1="{y1}%" x2="{x2}%" y2="{y2}%" '
+                        f'stroke="{ann["color"]}" stroke-width="2" marker-end="url(#arrow)" />'
+                    )
+            elif ann['type'] == 'freehand':
+                if ann['points']:
+                    points = [(scale_point(p[0], image_width), 
+                              scale_point(p[1], image_height)) for p in ann['points']]
+                    path_d = f'M {points[0][0]},{points[0][1]}'
+                    for p in points[1:]:
+                        path_d += f' L {p[0]},{p[1]}'
+                    svg_paths.append(
+                        f'<path d="{path_d}" fill="none" '
+                        f'stroke="{ann["color"]}" stroke-width="2" />'
+                    )
+        
+        if svg_paths:
+            markers = '''
+                <defs>
+                    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                        orient="auto" markerUnits="strokeWidth">
+                        <path d="M0,0 L0,6 L9,3 z" fill="currentColor"/>
+                    </marker>
+                </defs>
+            '''
+            return f'''
+                <svg class="annotation-overlay" viewBox="0 0 100 100" 
+                     preserveAspectRatio="none" 
+                     style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+                    {markers}
+                    {" ".join(svg_paths)}
+                </svg>
+            '''
+        return ""
+        
+    def render_html_report(self, folder_feedback):
+        """Render the HTML report using a template"""
+        template_str = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Frame.io Feedback Report</title>
+            <style>
+                body { 
+                    font-family: Arial, sans-serif; 
+                    margin: 20px;
+                    background: #f5f5f5;
+                }
+                .folder-section {
+                    margin: 30px 0;
+                    background: white;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    overflow: hidden;
+                }
+                .folder-header {
+                    padding: 20px;
+                    background: #f8f9fa;
+                    cursor: pointer;
+                    user-select: none;
+                    display: flex;
+                    align-items: center;
+                    border-bottom: 1px solid #eee;
+                }
+                .folder-header:hover {
+                    background: #f0f0f0;
+                }
+                .folder-title {
+                    font-size: 1.2em;
+                    color: #333;
+                    margin: 0;
+                    flex-grow: 1;
+                }
+                .folder-content {
+                    max-height: 0;
+                    overflow: hidden;
+                    transition: max-height 0.3s ease-out;
+                }
+                .folder-content.open {
+                    max-height: none;
+                }
+                .folder-toggle {
+                    margin-right: 10px;
+                    width: 20px;
+                    height: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: bold;
+                    transition: transform 0.3s ease;
+                }
+                .folder-toggle.open {
+                    transform: rotate(90deg);
+                }
+                .folder-count {
+                    background: #e9ecef;
+                    padding: 4px 8px;
+                    border-radius: 12px;
+                    font-size: 0.9em;
+                    color: #666;
+                    margin-left: 10px;
+                }
+                .asset { 
+                    border-bottom: 1px solid #eee;
+                    padding: 20px;
+                }
+                .asset:last-child {
+                    border-bottom: none;
+                }
+                .asset-header { 
+                    display: flex; 
+                    align-items: flex-start; 
+                    margin-bottom: 15px;
+                    gap: 20px;
+                }
+                .thumbnail-container {
+                    flex-shrink: 0;
+                    width: 200px;
+                    height: 112px;
+                    background: #f0f0f0;
+                    border-radius: 4px;
+                    overflow: hidden;
+                    position: relative;
+                }
+                .thumbnail-container:hover {
+                    opacity: 0.9;
+                }
+                .thumbnail { 
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                }
+                .asset-info { 
+                    flex-grow: 1;
+                }
+                .asset-name { 
+                    font-size: 1.2em; 
+                    font-weight: bold; 
+                    margin: 0 0 8px 0;
+                }
+                .asset-type {
+                    color: #666;
+                    font-size: 0.9em;
+                    margin-bottom: 8px;
+                }
+                .asset-link { 
+                    color: #0066cc; 
+                    text-decoration: none;
+                    display: inline-block;
+                    padding: 4px 8px;
+                    background: #f0f5ff;
+                    border-radius: 4px;
+                }
+                .comments { 
+                    margin-top: 15px;
+                }
+                .comment { 
+                    background: #f8f8f8; 
+                    padding: 12px; 
+                    margin: 10px 0; 
+                    border-radius: 6px;
+                    border-left: 4px solid #ddd;
+                }
+                .comment.has-annotation {
+                    background: #ffffff;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .comment-meta { 
+                    color: #666; 
+                    font-size: 0.9em; 
+                    margin-bottom: 8px;
+                }
+                .no-thumbnail {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 100%;
+                    height: 100%;
+                    color: #999;
+                    font-size: 0.9em;
+                }
+                .summary { 
+                    background: #eef2ff;
+                    padding: 20px;
+                    margin-bottom: 30px;
+                    border-radius: 8px;
+                    border: 1px solid #dde5ff;
+                }
+                .thumbnail-container {
+                    position: relative;
+                    width: 200px;
+                    height: 112px;
+                    background: #f0f0f0;
+                    border-radius: 4px;
+                    overflow: hidden;
+                }
+                
+                .thumbnail {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                    display: block;
+                }
+                
+                .annotation-overlay {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    pointer-events: none;
+                }
+            </style>
+            <script>
+                function toggleFolder(folderId) {
+                    const header = document.querySelector(`#folder-${folderId} .folder-header`);
+                    const content = document.querySelector(`#folder-${folderId} .folder-content`);
+                    const toggle = document.querySelector(`#folder-${folderId} .folder-toggle`);
+                    
+                    content.classList.toggle('open');
+                    toggle.classList.toggle('open');
+                    
+                    // Save state to localStorage
+                    const isOpen = content.classList.contains('open');
+                    localStorage.setItem(`folder-${folderId}`, isOpen);
+                }
+    
+                // Restore folder states on page load
+                window.onload = function() {
+                    document.querySelectorAll('.folder-section').forEach(folder => {
+                        const folderId = folder.id.split('-')[1];
+                        const isOpen = localStorage.getItem(`folder-${folderId}`) === 'true';
+                        if (isOpen) {
+                            folder.querySelector('.folder-content').classList.add('open');
+                            folder.querySelector('.folder-toggle').classList.add('open');
+                        }
+                    });
+                }
+            </script>
+        </head>
+        <body>
+            <h1>Frame.io Feedback Report</h1>
+            <div class="summary">
+                <p>Total folders with feedback: {{ folder_feedback.keys()|length }}</p>
+                <p>Total assets with feedback: {{ folder_feedback.values()|map('length')|sum }}</p>
+                <p>Generated: {{ now }}</p>
+            </div>
+            {% for folder_path, assets in folder_feedback.items()|sort %}
+            <div class="folder-section" id="folder-{{ loop.index }}">
+                <div class="folder-header" onclick="toggleFolder('{{ loop.index }}')">
+                    <div class="folder-toggle">▶</div>
+                    <h2 class="folder-title">{{ folder_path }}</h2>
+                    <span class="folder-count">{{ assets|length }} asset{% if assets|length != 1 %}s{% endif %}</span>
+                </div>
+                <div class="folder-content">
+                    {% for asset in assets %}
+                    <div class="asset">
+                        <div class="asset-header">
+                            <a href="{{ asset.asset_url }}" target="_blank" class="thumbnail-container">
+                                {% if asset.thumbnail_url %}
+                                    <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
+                                {% else %}
+                                    <div class="no-thumbnail">No preview available</div>
+                                {% endif %}
+                            </a>
+                            <div class="asset-info">
+                                <h2 class="asset-name">{{ asset.asset_name }}</h2>
+                                <div class="asset-type">{{ asset.asset_type }}</div>
+                                <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
+                            </div>
+                        </div>
+                        <div class="comments">
+                            {% for comment in asset.comments %}
+                            <div class="comment {% if comment.has_annotations %}has-annotation{% endif %}" 
+                                 style="border-left-color: {{ comment.color }}; {% if comment.has_annotations %}border-width: 4px;{% endif %}">
+                                <div class="comment-meta" style="color: {{ comment.color }};">
+                                    <strong>{{ comment.author }}</strong> - {{ comment.timestamp }}
+                                </div>
+                                {% if comment.has_annotations %}
+                                <div class="comment-thumbnail">
+                                   <div class="thumbnail-container">
+                                        <a href="{{ asset.asset_url }}" target="_blank">
+                                            {% if asset.thumbnail_url %}
+                                                <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}"
+                                                     onerror="this.parentElement.innerHTML='<div class=\'no-thumbnail\'>No preview available</div>';">
+                                                {% if comment.annotations %}
+                                                    {{ generate_svg_overlay(comment.annotations)|safe }}
+                                                {% endif %}
+                                            {% else %}
+                                                <div class="no-thumbnail">No preview available</div>
+                                            {% endif %}
+                                        </a>
+                                    </div>
+                                </div>
+                                {% endif %}
+                                {{ comment.text }}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </body>
+        </html>
+        """
+        
+        return Template(template_str).render(
+            folder_feedback=folder_feedback,
+            now=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        )
+    
+    def main():
+        st.set_page_config(page_title="Frame.io Feedback Exporter", page_icon="📋", layout="wide")
+        
+        st.title("Frame.io Feedback Exporter")
+        st.write("""
+        Generate a comprehensive report of all comments from your Frame.io projects.
+        You'll need your Frame.io API token to use this tool.
+        """)
+        
+        # Add checkbox for including old folders
+        include_old_folders = st.checkbox('Include folders containing "old" in their name', value=False)
+        
+        # API Token input with secure handling
+        api_token = st.text_input(
+            "Enter your Frame.io API Token",
+            type="password",
+            help="Find this in your Frame.io account settings under Developer section"
+        )
+        
+        if api_token:
+            try:
+                exporter = FrameIOFeedbackExporter(token=api_token, include_old_folders=include_old_folders)
+            
+                
+                # Fetch and display teams
+                teams = exporter.get_teams()
+                if teams:
+                    team_options = {t['name']: t['id'] for t in teams}
+                    selected_team = st.selectbox(
+                        "Select Team",
+                        options=list(team_options.keys())
+                    )
+                    
+                    # Fetch and display projects for selected team
+                    if selected_team:
+                        team_id = team_options[selected_team]
+                        projects = exporter.get_team_projects(team_id)
+                        if projects:
+                            project_options = {p['name']: p['id'] for p in projects}
+                            selected_project = st.selectbox(
+                                "Select Project",
+                                options=list(project_options.keys())
+                            )
+                            
+                            if st.button("Generate Report"):
+                                with st.spinner("Generating report... This might take a few minutes for large projects"):
+                                    project_id = project_options[selected_project]
+                                    html_content = exporter.generate_report(project_id)
+                                    
+                                    # Create download button for HTML
+                                    b64 = base64.b64encode(html_content.encode()).decode()
+                                    href = f'<a href="data:text/html;base64,{b64}" download="frameio_feedback_report.html">Download Report</a>'
+                                    st.markdown(href, unsafe_allow_html=True)
+                                    
+                                    # Preview
+                                    st.write("### Preview:")
+                                    st.components.v1.html(html_content, height=600, scrolling=True)
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main()
