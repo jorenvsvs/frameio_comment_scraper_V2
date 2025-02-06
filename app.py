@@ -443,59 +443,59 @@ def scale_point(point, dimension):
     """Scale point to percentage"""
     return (point * 100.0) / dimension
     
-svg_paths = []
-for ann in annotations:
-    if ann['type'] == 'rectangle':
-        x = scale_point(ann['x'], image_width)
-        y = scale_point(ann['y'], image_height)
-        width = scale_point(ann['width'], image_width)
-        height = scale_point(ann['height'], image_height)
-        svg_paths.append(
-            f'<rect x="{x}%" y="{y}%" width="{width}%" height="{height}%" '
-            f'fill="none" stroke="{ann["color"]}" stroke-width="2" />'
-        )
-    elif ann['type'] == 'arrow':
-        if ann['points']:
-            start = ann['points'][0]
-            end = ann['points'][-1]
-            x1 = scale_point(start[0], image_width)
-            y1 = scale_point(start[1], image_height)
-            x2 = scale_point(end[0], image_width)
-            y2 = scale_point(end[1], image_height)
+    svg_paths = []
+    for ann in annotations:
+        if ann['type'] == 'rectangle':
+            x = scale_point(ann['x'], image_width)
+            y = scale_point(ann['y'], image_height)
+            width = scale_point(ann['width'], image_width)
+            height = scale_point(ann['height'], image_height)
             svg_paths.append(
-                f'<line x1="{x1}%" y1="{y1}%" x2="{x2}%" y2="{y2}%" '
-                f'stroke="{ann["color"]}" stroke-width="2" marker-end="url(#arrow)" />'
+                f'<rect x="{x}%" y="{y}%" width="{width}%" height="{height}%" '
+                f'fill="none" stroke="{ann["color"]}" stroke-width="2" />'
             )
-    elif ann['type'] == 'freehand':
-        if ann['points']:
-            points = [(scale_point(p[0], image_width), 
-                      scale_point(p[1], image_height)) for p in ann['points']]
-            path_d = f'M {points[0][0]},{points[0][1]}'
-            for p in points[1:]:
-                path_d += f' L {p[0]},{p[1]}'
-            svg_paths.append(
-                f'<path d="{path_d}" fill="none" '
-                f'stroke="{ann["color"]}" stroke-width="2" />'
-            )
-
-if svg_paths:
-    markers = '''
-        <defs>
-            <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
-                orient="auto" markerUnits="strokeWidth">
-                <path d="M0,0 L0,6 L9,3 z" fill="currentColor"/>
-            </marker>
-        </defs>
-    '''
-    return f'''
-        <svg class="annotation-overlay" viewBox="0 0 100 100" 
-             preserveAspectRatio="none" 
-             style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
-            {markers}
-            {" ".join(svg_paths)}
-        </svg>
-    '''
-return ""
+        elif ann['type'] == 'arrow':
+            if ann['points']:
+                start = ann['points'][0]
+                end = ann['points'][-1]
+                x1 = scale_point(start[0], image_width)
+                y1 = scale_point(start[1], image_height)
+                x2 = scale_point(end[0], image_width)
+                y2 = scale_point(end[1], image_height)
+                svg_paths.append(
+                    f'<line x1="{x1}%" y1="{y1}%" x2="{x2}%" y2="{y2}%" '
+                    f'stroke="{ann["color"]}" stroke-width="2" marker-end="url(#arrow)" />'
+                )
+        elif ann['type'] == 'freehand':
+            if ann['points']:
+                points = [(scale_point(p[0], image_width), 
+                          scale_point(p[1], image_height)) for p in ann['points']]
+                path_d = f'M {points[0][0]},{points[0][1]}'
+                for p in points[1:]:
+                    path_d += f' L {p[0]},{p[1]}'
+                svg_paths.append(
+                    f'<path d="{path_d}" fill="none" '
+                    f'stroke="{ann["color"]}" stroke-width="2" />'
+                )
+    
+    if svg_paths:
+        markers = '''
+            <defs>
+                <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                    orient="auto" markerUnits="strokeWidth">
+                    <path d="M0,0 L0,6 L9,3 z" fill="currentColor"/>
+                </marker>
+            </defs>
+        '''
+        return f'''
+            <svg class="annotation-overlay" viewBox="0 0 100 100" 
+                 preserveAspectRatio="none" 
+                 style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+                {markers}
+                {" ".join(svg_paths)}
+            </svg>
+        '''
+    return ""
     
 def render_html_report(self, folder_feedback):
     """Render the HTML report using a template"""
