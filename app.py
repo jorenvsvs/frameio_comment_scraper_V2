@@ -9,13 +9,14 @@ import pickle
 import os
 
 class FrameIOFeedbackExporter:
-    def __init__(self, token):
-        self.token = token
-        self.base_url = "https://api.frame.io/v2"
-        self.headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
+    def __init__(self, token, include_old_folders=False):
+    self.token = token
+    self.include_old_folders = include_old_folders
+    self.base_url = "https://api.frame.io/v2"
+    self.headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
         self.request_delay = 0.5      # Half second between requests
         self.max_retries = 3
         self.retry_delay = 2         # 10 seconds retry delay
