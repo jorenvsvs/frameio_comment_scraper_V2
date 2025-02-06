@@ -17,11 +17,11 @@ class FrameIOFeedbackExporter:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
-        self.request_delay = 0.5      # Half second between requests
-        self.max_retries = 3
-        self.retry_delay = 2         # 10 seconds retry delay
-        self.chunk_size = 30          # Process 30 assets at a time
-        self.chunk_delay = 2         # 20 seconds between chunks
+        self.request_delay = 0.2      # 200ms between requests (was 500ms)
+        self.max_retries = 3          # Keep this the same for reliability
+        self.retry_delay = 5          # 5 seconds (better to have longer retry delay but shorter chunk delay)
+        self.chunk_size = 50          # Process 50 assets at a time (was 30)
+        self.chunk_delay = 1          # 1 second between chunks (was 2)
         self.include_old_folders = include_old_folders
 
     def get_comment_color(self, comment_index):
@@ -319,7 +319,19 @@ class FrameIOFeedbackExporter:
         
         st.write(f"\nTotal assets found: {len(all_assets)}")
         return all_assets
-
+        
+    def process_comment_author(self, comment):
+        """Extract author name from comment with better debugging"""
+        author = comment.get('author', {})
+        st.write("Author data:", author)  # Debug line
+        
+        # Try different possible fields
+        name = (author.get('name') or 
+                author.get('display_name') or 
+                author.get('full_name') or 
+                author.get('email', 'Unknown User'))
+        return name
+        
     def generate_report(self, project_id):
         """Generate an HTML report of all comments"""
         assets = self.get_all_assets(project_id)
@@ -350,10 +362,10 @@ class FrameIOFeedbackExporter:
                             author_name = self.process_comment_author(comment)
                             comment_text = comment.get('text', 'No comment text')
                             created_at = comment.get('created_at', datetime.now().isoformat())
-    
+                            
                             comment_color = self.get_comment_color(comment_idx)
                             annotations = self.process_comment_annotations(comment, comment_color)
-    
+                            
                             processed_comments.append({
                                 'text': comment_text,
                                 'author': author_name,
@@ -427,342 +439,342 @@ def generate_svg_overlay(self, annotations, image_width=200, image_height=112):
     
     st.write(f"Generating SVG for annotations: {json.dumps(annotations, indent=2)}")  # Debug line
     
-    def scale_point(point, dimension):
-        """Scale point to percentage"""
-        return (point * 100.0) / dimension
-        
-    svg_paths = []
-    for ann in annotations:
-        if ann['type'] == 'rectangle':
-            x = scale_point(ann['x'], image_width)
-            y = scale_point(ann['y'], image_height)
-            width = scale_point(ann['width'], image_width)
-            height = scale_point(ann['height'], image_height)
-            svg_paths.append(
-                f'<rect x="{x}%" y="{y}%" width="{width}%" height="{height}%" '
-                f'fill="none" stroke="{ann["color"]}" stroke-width="2" />'
-            )
-        elif ann['type'] == 'arrow':
-            if ann['points']:
-                start = ann['points'][0]
-                end = ann['points'][-1]
-                x1 = scale_point(start[0], image_width)
-                y1 = scale_point(start[1], image_height)
-                x2 = scale_point(end[0], image_width)
-                y2 = scale_point(end[1], image_height)
-                svg_paths.append(
-                    f'<line x1="{x1}%" y1="{y1}%" x2="{x2}%" y2="{y2}%" '
-                    f'stroke="{ann["color"]}" stroke-width="2" marker-end="url(#arrow)" />'
-                )
-        elif ann['type'] == 'freehand':
-            if ann['points']:
-                points = [(scale_point(p[0], image_width), 
-                          scale_point(p[1], image_height)) for p in ann['points']]
-                path_d = f'M {points[0][0]},{points[0][1]}'
-                for p in points[1:]:
-                    path_d += f' L {p[0]},{p[1]}'
-                svg_paths.append(
-                    f'<path d="{path_d}" fill="none" '
-                    f'stroke="{ann["color"]}" stroke-width="2" />'
-                )
-
-    if svg_paths:
-        markers = '''
-            <defs>
-                <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
-                    orient="auto" markerUnits="strokeWidth">
-                    <path d="M0,0 L0,6 L9,3 z" fill="currentColor"/>
-                </marker>
-            </defs>
-        '''
-        return f'''
-            <svg class="annotation-overlay" viewBox="0 0 100 100" 
-                 preserveAspectRatio="none" 
-                 style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
-                {markers}
-                {" ".join(svg_paths)}
-            </svg>
-        '''
-    return ""
+def scale_point(point, dimension):
+    """Scale point to percentage"""
+    return (point * 100.0) / dimension
     
-    def render_html_report(self, folder_feedback):
-        """Render the HTML report using a template"""
-        template_str = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Frame.io Feedback Report</title>
-            <style>
-                body { 
-                    font-family: Arial, sans-serif; 
-                    margin: 20px;
-                    background: #f5f5f5;
-                }
-                .folder-section {
-                    margin: 30px 0;
-                    background: white;
-                    border-radius: 8px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    overflow: hidden;
-                }
-                .folder-header {
-                    padding: 20px;
-                    background: #f8f9fa;
-                    cursor: pointer;
-                    user-select: none;
-                    display: flex;
-                    align-items: center;
-                    border-bottom: 1px solid #eee;
-                }
-                .folder-header:hover {
-                    background: #f0f0f0;
-                }
-                .folder-title {
-                    font-size: 1.2em;
-                    color: #333;
-                    margin: 0;
-                    flex-grow: 1;
-                }
-                .folder-content {
-                    max-height: 0;
-                    overflow: hidden;
-                    transition: max-height 0.3s ease-out;
-                }
-                .folder-content.open {
-                    max-height: none;
-                }
-                .folder-toggle {
-                    margin-right: 10px;
-                    width: 20px;
-                    height: 20px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-weight: bold;
-                    transition: transform 0.3s ease;
-                }
-                .folder-toggle.open {
-                    transform: rotate(90deg);
-                }
-                .folder-count {
-                    background: #e9ecef;
-                    padding: 4px 8px;
-                    border-radius: 12px;
-                    font-size: 0.9em;
-                    color: #666;
-                    margin-left: 10px;
-                }
-                .asset { 
-                    border-bottom: 1px solid #eee;
-                    padding: 20px;
-                }
-                .asset:last-child {
-                    border-bottom: none;
-                }
-                .asset-header { 
-                    display: flex; 
-                    align-items: flex-start; 
-                    margin-bottom: 15px;
-                    gap: 20px;
-                }
-                .thumbnail-container {
-                    flex-shrink: 0;
-                    width: 200px;
-                    height: 112px;
-                    background: #f0f0f0;
-                    border-radius: 4px;
-                    overflow: hidden;
-                    position: relative;
-                }
-                .thumbnail-container:hover {
-                    opacity: 0.9;
-                }
-                .thumbnail { 
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                    display: block;
-                }
-                .asset-info { 
-                    flex-grow: 1;
-                }
-                .asset-name { 
-                    font-size: 1.2em; 
-                    font-weight: bold; 
-                    margin: 0 0 8px 0;
-                }
-                .asset-type {
-                    color: #666;
-                    font-size: 0.9em;
-                    margin-bottom: 8px;
-                }
-                .asset-link { 
-                    color: #0066cc; 
-                    text-decoration: none;
-                    display: inline-block;
-                    padding: 4px 8px;
-                    background: #f0f5ff;
-                    border-radius: 4px;
-                }
-                .comments { 
-                    margin-top: 15px;
-                }
-                .comment { 
-                    background: #f8f8f8; 
-                    padding: 12px; 
-                    margin: 10px 0; 
-                    border-radius: 6px;
-                    border-left: 4px solid #ddd;
-                }
-                .comment.has-annotation {
-                    background: #ffffff;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                }
-                .comment-meta { 
-                    color: #666; 
-                    font-size: 0.9em; 
-                    margin-bottom: 8px;
-                }
-                .no-thumbnail {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    width: 100%;
-                    height: 100%;
-                    color: #999;
-                    font-size: 0.9em;
-                }
-                .summary { 
-                    background: #eef2ff;
-                    padding: 20px;
-                    margin-bottom: 30px;
-                    border-radius: 8px;
-                    border: 1px solid #dde5ff;
-                }
-                .thumbnail-container {
-                    position: relative;
-                    width: 200px;
-                    height: 112px;
-                    background: #f0f0f0;
-                    border-radius: 4px;
-                    overflow: hidden;
-                }
-                
-                .thumbnail {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: contain;
-                    display: block;
-                }
-                
-                .annotation-overlay {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    pointer-events: none;
-                }
-            </style>
-            <script>
-                function toggleFolder(folderId) {
-                    const header = document.querySelector(`#folder-${folderId} .folder-header`);
-                    const content = document.querySelector(`#folder-${folderId} .folder-content`);
-                    const toggle = document.querySelector(`#folder-${folderId} .folder-toggle`);
-                    
-                    content.classList.toggle('open');
-                    toggle.classList.toggle('open');
-                    
-                    // Save state to localStorage
-                    const isOpen = content.classList.contains('open');
-                    localStorage.setItem(`folder-${folderId}`, isOpen);
-                }
+svg_paths = []
+for ann in annotations:
+    if ann['type'] == 'rectangle':
+        x = scale_point(ann['x'], image_width)
+        y = scale_point(ann['y'], image_height)
+        width = scale_point(ann['width'], image_width)
+        height = scale_point(ann['height'], image_height)
+        svg_paths.append(
+            f'<rect x="{x}%" y="{y}%" width="{width}%" height="{height}%" '
+            f'fill="none" stroke="{ann["color"]}" stroke-width="2" />'
+        )
+    elif ann['type'] == 'arrow':
+        if ann['points']:
+            start = ann['points'][0]
+            end = ann['points'][-1]
+            x1 = scale_point(start[0], image_width)
+            y1 = scale_point(start[1], image_height)
+            x2 = scale_point(end[0], image_width)
+            y2 = scale_point(end[1], image_height)
+            svg_paths.append(
+                f'<line x1="{x1}%" y1="{y1}%" x2="{x2}%" y2="{y2}%" '
+                f'stroke="{ann["color"]}" stroke-width="2" marker-end="url(#arrow)" />'
+            )
+    elif ann['type'] == 'freehand':
+        if ann['points']:
+            points = [(scale_point(p[0], image_width), 
+                      scale_point(p[1], image_height)) for p in ann['points']]
+            path_d = f'M {points[0][0]},{points[0][1]}'
+            for p in points[1:]:
+                path_d += f' L {p[0]},{p[1]}'
+            svg_paths.append(
+                f'<path d="{path_d}" fill="none" '
+                f'stroke="{ann["color"]}" stroke-width="2" />'
+            )
 
-                // Restore folder states on page load
-                window.onload = function() {
-                    document.querySelectorAll('.folder-section').forEach(folder => {
-                        const folderId = folder.id.split('-')[1];
-                        const isOpen = localStorage.getItem(`folder-${folderId}`) === 'true';
-                        if (isOpen) {
-                            folder.querySelector('.folder-content').classList.add('open');
-                            folder.querySelector('.folder-toggle').classList.add('open');
-                        }
-                    });
-                }
-            </script>
-        </head>
-        <body>
-            <h1>Frame.io Feedback Report</h1>
-            <div class="summary">
-                <p>Total folders with feedback: {{ folder_feedback.keys()|length }}</p>
-                <p>Total assets with feedback: {{ folder_feedback.values()|map('length')|sum }}</p>
-                <p>Generated: {{ now }}</p>
+if svg_paths:
+    markers = '''
+        <defs>
+            <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="currentColor"/>
+            </marker>
+        </defs>
+    '''
+    return f'''
+        <svg class="annotation-overlay" viewBox="0 0 100 100" 
+             preserveAspectRatio="none" 
+             style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+            {markers}
+            {" ".join(svg_paths)}
+        </svg>
+    '''
+return ""
+    
+def render_html_report(self, folder_feedback):
+    """Render the HTML report using a template"""
+    template_str = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Frame.io Feedback Report</title>
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                margin: 20px;
+                background: #f5f5f5;
+            }
+            .folder-section {
+                margin: 30px 0;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }
+            .folder-header {
+                padding: 20px;
+                background: #f8f9fa;
+                cursor: pointer;
+                user-select: none;
+                display: flex;
+                align-items: center;
+                border-bottom: 1px solid #eee;
+            }
+            .folder-header:hover {
+                background: #f0f0f0;
+            }
+            .folder-title {
+                font-size: 1.2em;
+                color: #333;
+                margin: 0;
+                flex-grow: 1;
+            }
+            .folder-content {
+                max-height: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease-out;
+            }
+            .folder-content.open {
+                max-height: none;
+            }
+            .folder-toggle {
+                margin-right: 10px;
+                width: 20px;
+                height: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
+                transition: transform 0.3s ease;
+            }
+            .folder-toggle.open {
+                transform: rotate(90deg);
+            }
+            .folder-count {
+                background: #e9ecef;
+                padding: 4px 8px;
+                border-radius: 12px;
+                font-size: 0.9em;
+                color: #666;
+                margin-left: 10px;
+            }
+            .asset { 
+                border-bottom: 1px solid #eee;
+                padding: 20px;
+            }
+            .asset:last-child {
+                border-bottom: none;
+            }
+            .asset-header { 
+                display: flex; 
+                align-items: flex-start; 
+                margin-bottom: 15px;
+                gap: 20px;
+            }
+            .thumbnail-container {
+                flex-shrink: 0;
+                width: 200px;
+                height: 112px;
+                background: #f0f0f0;
+                border-radius: 4px;
+                overflow: hidden;
+                position: relative;
+            }
+            .thumbnail-container:hover {
+                opacity: 0.9;
+            }
+            .thumbnail { 
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }
+            .asset-info { 
+                flex-grow: 1;
+            }
+            .asset-name { 
+                font-size: 1.2em; 
+                font-weight: bold; 
+                margin: 0 0 8px 0;
+            }
+            .asset-type {
+                color: #666;
+                font-size: 0.9em;
+                margin-bottom: 8px;
+            }
+            .asset-link { 
+                color: #0066cc; 
+                text-decoration: none;
+                display: inline-block;
+                padding: 4px 8px;
+                background: #f0f5ff;
+                border-radius: 4px;
+            }
+            .comments { 
+                margin-top: 15px;
+            }
+            .comment { 
+                background: #f8f8f8; 
+                padding: 12px; 
+                margin: 10px 0; 
+                border-radius: 6px;
+                border-left: 4px solid #ddd;
+            }
+            .comment.has-annotation {
+                background: #ffffff;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .comment-meta { 
+                color: #666; 
+                font-size: 0.9em; 
+                margin-bottom: 8px;
+            }
+            .no-thumbnail {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                height: 100%;
+                color: #999;
+                font-size: 0.9em;
+            }
+            .summary { 
+                background: #eef2ff;
+                padding: 20px;
+                margin-bottom: 30px;
+                border-radius: 8px;
+                border: 1px solid #dde5ff;
+            }
+            .thumbnail-container {
+                position: relative;
+                width: 200px;
+                height: 112px;
+                background: #f0f0f0;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            
+            .thumbnail {
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+                display: block;
+            }
+            
+            .annotation-overlay {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+            }
+        </style>
+        <script>
+            function toggleFolder(folderId) {
+                const header = document.querySelector(`#folder-${folderId} .folder-header`);
+                const content = document.querySelector(`#folder-${folderId} .folder-content`);
+                const toggle = document.querySelector(`#folder-${folderId} .folder-toggle`);
+                
+                content.classList.toggle('open');
+                toggle.classList.toggle('open');
+                
+                // Save state to localStorage
+                const isOpen = content.classList.contains('open');
+                localStorage.setItem(`folder-${folderId}`, isOpen);
+            }
+
+            // Restore folder states on page load
+            window.onload = function() {
+                document.querySelectorAll('.folder-section').forEach(folder => {
+                    const folderId = folder.id.split('-')[1];
+                    const isOpen = localStorage.getItem(`folder-${folderId}`) === 'true';
+                    if (isOpen) {
+                        folder.querySelector('.folder-content').classList.add('open');
+                        folder.querySelector('.folder-toggle').classList.add('open');
+                    }
+                });
+            }
+        </script>
+    </head>
+    <body>
+        <h1>Frame.io Feedback Report</h1>
+        <div class="summary">
+            <p>Total folders with feedback: {{ folder_feedback.keys()|length }}</p>
+            <p>Total assets with feedback: {{ folder_feedback.values()|map('length')|sum }}</p>
+            <p>Generated: {{ now }}</p>
+        </div>
+        {% for folder_path, assets in folder_feedback.items()|sort %}
+        <div class="folder-section" id="folder-{{ loop.index }}">
+            <div class="folder-header" onclick="toggleFolder('{{ loop.index }}')">
+                <div class="folder-toggle">▶</div>
+                <h2 class="folder-title">{{ folder_path }}</h2>
+                <span class="folder-count">{{ assets|length }} asset{% if assets|length != 1 %}s{% endif %}</span>
             </div>
-            {% for folder_path, assets in folder_feedback.items()|sort %}
-            <div class="folder-section" id="folder-{{ loop.index }}">
-                <div class="folder-header" onclick="toggleFolder('{{ loop.index }}')">
-                    <div class="folder-toggle">▶</div>
-                    <h2 class="folder-title">{{ folder_path }}</h2>
-                    <span class="folder-count">{{ assets|length }} asset{% if assets|length != 1 %}s{% endif %}</span>
-                </div>
-                <div class="folder-content">
-                    {% for asset in assets %}
-                    <div class="asset">
-                        <div class="asset-header">
-                            <a href="{{ asset.asset_url }}" target="_blank" class="thumbnail-container">
-                                {% if asset.thumbnail_url %}
-                                    <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
-                                {% else %}
-                                    <div class="no-thumbnail">No preview available</div>
-                                {% endif %}
-                            </a>
-                            <div class="asset-info">
-                                <h2 class="asset-name">{{ asset.asset_name }}</h2>
-                                <div class="asset-type">{{ asset.asset_type }}</div>
-                                <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
-                            </div>
-                        </div>
-                        <div class="comments">
-                            {% for comment in asset.comments %}
-                            <div class="comment {% if comment.has_annotations %}has-annotation{% endif %}" 
-                                 style="border-left-color: {{ comment.color }}; {% if comment.has_annotations %}border-width: 4px;{% endif %}">
-                                <div class="comment-meta" style="color: {{ comment.color }};">
-                                    <strong>{{ comment.author }}</strong> - {{ comment.timestamp }}
-                                </div>
-                                {% if comment.has_annotations %}
-                                <div class="comment-thumbnail">
-                                   <div class="thumbnail-container">
-                                        <a href="{{ asset.asset_url }}" target="_blank">
-                                            {% if asset.thumbnail_url %}
-                                                <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}"
-                                                     onerror="this.parentElement.innerHTML='<div class=\'no-thumbnail\'>No preview available</div>';">
-                                                {% if comment.annotations %}
-                                                    {{ generate_svg_overlay(comment.annotations)|safe }}
-                                                {% endif %}
-                                            {% else %}
-                                                <div class="no-thumbnail">No preview available</div>
-                                            {% endif %}
-                                        </a>
-                                    </div>
-                                </div>
-                                {% endif %}
-                                {{ comment.text }}
-                            </div>
-                            {% endfor %}
+            <div class="folder-content">
+                {% for asset in assets %}
+                <div class="asset">
+                    <div class="asset-header">
+                        <a href="{{ asset.asset_url }}" target="_blank" class="thumbnail-container">
+                            {% if asset.thumbnail_url %}
+                                <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}">
+                            {% else %}
+                                <div class="no-thumbnail">No preview available</div>
+                            {% endif %}
+                        </a>
+                        <div class="asset-info">
+                            <h2 class="asset-name">{{ asset.asset_name }}</h2>
+                            <div class="asset-type">{{ asset.asset_type }}</div>
+                            <a href="{{ asset.asset_url }}" class="asset-link" target="_blank">View in Frame.io →</a>
                         </div>
                     </div>
-                    {% endfor %}
+                    <div class="comments">
+                        {% for comment in asset.comments %}
+                        <div class="comment {% if comment.has_annotations %}has-annotation{% endif %}" 
+                             style="border-left-color: {{ comment.color }}; {% if comment.has_annotations %}border-width: 4px;{% endif %}">
+                            <div class="comment-meta" style="color: {{ comment.color }};">
+                                <strong>{{ comment.author }}</strong> - {{ comment.timestamp }}
+                            </div>
+                            {% if comment.has_annotations %}
+                            <div class="comment-thumbnail">
+                               <div class="thumbnail-container">
+                                    <a href="{{ asset.asset_url }}" target="_blank">
+                                        {% if asset.thumbnail_url %}
+                                            <img class="thumbnail" src="{{ asset.thumbnail_url }}" alt="{{ asset.asset_name }}"
+                                                 onerror="this.parentElement.innerHTML='<div class=\'no-thumbnail\'>No preview available</div>';">
+                                            {% if comment.annotations %}
+                                                {{ generate_svg_overlay(comment.annotations)|safe }}
+                                            {% endif %}
+                                        {% else %}
+                                            <div class="no-thumbnail">No preview available</div>
+                                        {% endif %}
+                                    </a>
+                                </div>
+                            </div>
+                            {% endif %}
+                            {{ comment.text }}
+                        </div>
+                        {% endfor %}
+                    </div>
                 </div>
+                {% endfor %}
             </div>
-            {% endfor %}
-        </body>
-        </html>
-        """
-        
-        return Template(template_str).render(
-            folder_feedback=folder_feedback,
-            now=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        )
+        </div>
+        {% endfor %}
+    </body>
+    </html>
+    """
+    
+    return Template(template_str).render(
+        folder_feedback=folder_feedback,
+        now=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    )
 
 def main():
     st.set_page_config(page_title="Frame.io Feedback Exporter", page_icon="📋", layout="wide")
