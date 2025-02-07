@@ -141,6 +141,7 @@ class FrameIOFeedbackExporter:
         if not self.should_process_folder(folder_name):
             return []
     
+        st.write(f"\nExamining folder contents: {folder_name}")
         assets = []
         items = self.get_folder_contents(folder_id)
         
@@ -149,15 +150,17 @@ class FrameIOFeedbackExporter:
             name = item.get('name', '')
             item_id = item.get('id')
             
-            if name_filter and name_filter.lower() not in name.lower():
-                st.write(f"Skipping item in folder: {name}")
-                continue
-                
+            st.write(f"Found in folder {folder_name}: {name} (Type: {item_type})")
+            
             if item_type == 'folder':
                 if self.should_process_folder(name):
                     subfolder_assets = self.process_folder(item_id, name, name_filter)
                     assets.extend(subfolder_assets)
             else:
+                if name_filter and name_filter.lower() not in name.lower():
+                    st.write(f"Skipping {name} - doesn't match filter")
+                    continue
+                st.write(f"Adding {name} to assets")
                 assets.append(item)
         
         return assets
