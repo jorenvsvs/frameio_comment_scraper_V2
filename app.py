@@ -75,7 +75,6 @@ class FrameIOFeedbackExporter:
     def get_review_links(self, project_id):
         try:
             review_links = self.make_request(f"{self.base_url}/projects/{project_id}/review_links")
-            st.write(f"Found {len(review_links)} review links in project")
             return review_links
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching review links: {str(e)}")
@@ -289,10 +288,8 @@ class FrameIOFeedbackExporter:
         organized_assets.sort(key=lambda x: (x['folder_path'], x['asset'].get('name', '')))
         return organized_assets
 
-    def get_all_assets(self, project_id):
-        st.write("Starting to collect all assets...")
+    def get_all_assets(self, project_id, name_filter=""):
         all_assets = []
-        
         review_links = self.get_review_links(project_id)
         
         for review_link in review_links:
@@ -311,6 +308,10 @@ class FrameIOFeedbackExporter:
                         st.write(f"\nChecking asset: {asset_id}")
                         asset_details = self.get_item_details(asset_id)
                         if asset_details:
+
+                            if name_filter and name_filter.lower() not in asset_details.get('name', '').lower():
+                                continue
+                                
                             if asset_details.get('type') == 'folder':
                                 st.write(f"Processing folder: {asset_details.get('name')}")
                                 folder_assets = self.process_folder(asset_id, asset_details.get('name'))
@@ -340,8 +341,8 @@ class FrameIOFeedbackExporter:
         ]
         return colors[comment_index % len(colors)]
         
-    def generate_report(self, project_id):
-        assets = self.get_all_assets(project_id)
+    def generate_report(self, project_id, name_filter=""):
+        assets = self.get_all_assets(project_id, name_filter)
         feedback_data, processed_ids = self.load_progress(project_id)
         
         assets_to_process = [a for a in assets if a['id'] not in processed_ids]
@@ -656,6 +657,7 @@ def main():
     st.sidebar.write("Generate a comprehensive report of Frame.io comments.")
     
     include_old_folders = st.sidebar.checkbox('Include "old" folders', value=False)
+    asset_name_filter = st.sidebar.text_input("Filter assets by name")
     api_token = st.sidebar.text_input("Frame.io API Token", type="password")
     
     if api_token:
@@ -678,7 +680,7 @@ def main():
                         if st.sidebar.button("Generate Report"):
                             with st.spinner("Generating report..."):
                                 project_id = project_options[selected_project]
-                                html_content = exporter.generate_report(project_id)
+                                html_content = exporter.generate_report(project_id, asset_name_filter)
                                 
                                 b64 = base64.b64encode(html_content.encode()).decode()
                                 href = f'<a href="data:text/html;base64,{b64}" download="frameio_feedback_report.html">Download Report</a>'
