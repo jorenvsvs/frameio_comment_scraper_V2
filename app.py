@@ -22,7 +22,8 @@ class FrameIOFeedbackExporter:
         self.retry_delay = 5
         self.chunk_size = 50
         self.chunk_delay = 1
-        self.folder_cache = {} 
+        self.folder_cache = {}
+        self.processed_folders = set()
 
     def make_request(self, url, method='GET'):
         for attempt in range(self.max_retries):
@@ -138,32 +139,38 @@ class FrameIOFeedbackExporter:
         return []
 
     def process_folder(self, folder_id, folder_name="", name_filter=""):
-        if not self.should_process_folder(folder_name):
-            return []
+       if folder_id in self.processed_folders:
+           return []
+       self.processed_folders.add(folder_id)
+       
+       if not self.should_process_folder(folder_name):
+           return []
     
-        st.write(f"\nExamining folder contents: {folder_name}")
-        assets = []
-        items = self.get_folder_contents(folder_id)
-        
-        for item in items:
-            item_type = item.get('type', '')
-            name = item.get('name', '')
-            item_id = item.get('id')
-            
-            st.write(f"Found in folder {folder_name}: {name} (Type: {item_type})")
-            
-            if item_type == 'folder':
-                if self.should_process_folder(name):
-                    subfolder_assets = self.process_folder(item_id, name, name_filter)
-                    assets.extend(subfolder_assets)
-            else:
-                if name_filter and name_filter.lower() not in name.lower():
-                    st.write(f"Skipping {name} - doesn't match filter")
-                    continue
-                st.write(f"Adding {name} to assets")
-                assets.append(item)
-        
-        return assets
+       st.write(f"\nExamining folder contents: {folder_name}")
+       assets = []
+       items = self.get_folder_contents(folder_id)
+       
+       for item in items:
+           item_type = item.get('type', '')
+           name = item.get('name', '')
+           item_id = item.get('id')
+           
+           st.write(f"Found in folder {folder_name}: {name} (Type: {item_type})")
+           
+           if item_type == 'folder':
+               if self.should_process_folder(name):
+                   subfolder_assets = self.process_folder(item_id, name, name_filter)
+                   assets.extend(subfolder_assets)
+           else:
+               if name_filter:
+                   filter_terms = [term.strip().lower() for term in name_filter.split(',')]
+                   if not all(term in name.lower() for term in filter_terms):
+                       st.write(f"Skipping {name} - doesn't match all filters")
+                       continue
+               st.write(f"Adding {name} to assets")
+               assets.append(item)
+       
+       return assets
 
     def get_asset_preview(self, asset_id, asset_details):
         try:
@@ -316,9 +323,11 @@ class FrameIOFeedbackExporter:
                                    st.write(f"Adding {len(folder_assets)} assets from folder")
                                    all_assets.extend(folder_assets)
                            else:
-                               if name_filter and name_filter.lower() not in asset_name.lower():
-                                   st.write(f"Skipping asset: {asset_name} (doesn't match filter)")
-                                   continue
+                               if name_filter:
+                                   filter_terms = [term.strip().lower() for term in name_filter.split(',')]
+                                   if not all(term in asset_name.lower() for term in filter_terms):
+                                       st.write(f"Skipping asset: {asset_name} (doesn't match all filters)")
+                                       continue
                                st.write("Adding single asset")
                                all_assets.append(asset_details)
            except requests.exceptions.RequestException as e:
@@ -657,7 +666,7 @@ def main():
     st.sidebar.write("Generate a comprehensive report of Frame.io comments.")
     
     include_old_folders = st.sidebar.checkbox('Include "old" folders', value=False)
-    asset_name_filter = st.sidebar.text_input("Filter assets by name")
+    asset_name_filter = st.sidebar.text_input("Filter assets by name (separate multiple terms with commas)")
     api_token = st.sidebar.text_input("Frame.io API Token", type="password")
     
     if api_token:
