@@ -137,15 +137,17 @@ class FrameIOFeedbackExporter:
         st.error(f"All attempts to get folder contents failed for folder {folder_id}")
         return []
 
-    def process_folder(self, folder_id, folder_name=""):
+    def process_folder(self, folder_id, folder_name="", name_filter=""):
         if not self.should_process_folder(folder_name):
             return []
-
-        st.write(f"\n>>> Processing folder: {folder_name} ({folder_id})")
+    
         assets = []
         items = self.get_folder_contents(folder_id)
         
         for item in items:
+            if name_filter and name_filter.lower() not in item.get('name', '').lower():
+                continue
+                
             item_type = item.get('type', '')
             name = item.get('name', 'Unnamed')
             item_id = item.get('id')
@@ -308,13 +310,14 @@ class FrameIOFeedbackExporter:
                         st.write(f"\nChecking asset: {asset_id}")
                         asset_details = self.get_item_details(asset_id)
                         if asset_details:
-
-                            if name_filter and name_filter.lower() not in asset_details.get('name', '').lower():
+                            asset_name = asset_details.get('name', '')
+                            if name_filter and name_filter.lower() not in asset_name.lower():
+                                st.write(f"Skipping asset: {asset_name} (doesn't match filter: {name_filter})")
                                 continue
                                 
                             if asset_details.get('type') == 'folder':
                                 st.write(f"Processing folder: {asset_details.get('name')}")
-                                folder_assets = self.process_folder(asset_id, asset_details.get('name'))
+                                folder_assets = self.process_folder(asset_id, asset_details.get('name'), name_filter)
                                 if folder_assets:
                                     st.write(f"Adding {len(folder_assets)} assets from folder")
                                     all_assets.extend(folder_assets)
