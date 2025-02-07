@@ -213,7 +213,7 @@ class FrameIOFeedbackExporter:
             comments = self.make_request(url)
             if comments:
                 #st.write(f"Found {len(comments)} comments for asset {asset_id}")
-                #st.write("Raw comment data:", json.dumps(comments, indent=2))
+                st.write("Raw comment data:", json.dumps(comments, indent=2))
             return comments
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching comments: {str(e)}")
