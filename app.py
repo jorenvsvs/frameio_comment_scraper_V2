@@ -36,7 +36,7 @@ class FrameIOFeedbackExporter:
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 429 and attempt < self.max_retries - 1:
                     wait_time = self.retry_delay * (4 ** attempt)
-                    st.write(f"Rate limit hit. Waiting {wait_time} seconds...")
+                    #st.write(f"Rate limit hit. Waiting {wait_time} seconds...")
                     time.sleep(wait_time)
                     continue
                 raise
@@ -55,12 +55,12 @@ class FrameIOFeedbackExporter:
         try:
             with open(f'frameio_progress_{project_id}.pkl', 'rb') as f:
                 data = pickle.load(f)
-                st.write("Found previous progress. Resuming...")
+                #st.write("Found previous progress. Resuming...")
                 return data['feedback_data'], data['processed_ids']
         except:
             return [], set()
 
-     
+     @st.cache_data(ttl=3600)
     def get_teams(self):
         try:
             return self.make_request(f"{self.base_url}/teams")
@@ -68,7 +68,7 @@ class FrameIOFeedbackExporter:
             st.error(f"Error fetching teams: {str(e)}")
             return []
             
-     
+     @st.cache_data(ttl=3600)
     def get_team_projects(self, team_id):
         try:
             return self.make_request(f"{self.base_url}/teams/{team_id}/projects")
@@ -76,7 +76,7 @@ class FrameIOFeedbackExporter:
             st.error(f"Error fetching team projects: {str(e)}")
             return []
             
-     
+     @st.cache_data(ttl=3600)
     def get_review_links(self, project_id):
         try:
             review_links = self.make_request(f"{self.base_url}/projects/{project_id}/review_links")
@@ -87,11 +87,11 @@ class FrameIOFeedbackExporter:
 
     def should_process_folder(self, folder_name):
         if not self.include_old_folders and 'old' in folder_name.lower():
-            st.write(f"Skipping folder '{folder_name}' (contains 'old')")
+            #st.write(f"Skipping folder '{folder_name}' (contains 'old')")
             return False
         return True
 
-     
+     @st.cache_data(ttl=3600)
     def get_folder_path(self, asset, folders=None):
         """Get the full folder path for an asset"""
         parent_id = asset.get('parent_id')
@@ -112,19 +112,19 @@ class FrameIOFeedbackExporter:
             st.write(f"Error getting folder path: {str(e)}")
         return "/"
 
-     
+     @st.cache_data(ttl=3600)
     def get_item_details(self, item_id):
         try:
             item_details = self.make_request(f"{self.base_url}/assets/{item_id}")
-            st.write(f"Got details for item: {item_details.get('name', 'Unnamed')} (Type: {item_details.get('type', 'unknown')})")
+            #st.write(f"Got details for item: {item_details.get('name', 'Unnamed')} (Type: {item_details.get('type', 'unknown')})")
             return item_details
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching item details: {str(e)}")
             return None
 
-     
+     @st.cache_data(ttl=3600)
     def get_folder_contents(self, folder_id):
-        st.write(f"Getting contents of folder {folder_id}")
+        #st.write(f"Getting contents of folder {folder_id}")
         endpoints = [
             f"{self.base_url}/assets/{folder_id}/items",
             f"{self.base_url}/assets/{folder_id}/children",
@@ -136,7 +136,7 @@ class FrameIOFeedbackExporter:
             try:
                 items = self.make_request(endpoint)
                 if items:
-                    st.write(f"Found {len(items)} items")
+                    #st.write(f"Found {len(items)} items")
                     return items
             except requests.exceptions.RequestException:
                 continue
@@ -152,7 +152,7 @@ class FrameIOFeedbackExporter:
        if not self.should_process_folder(folder_name):
            return []
     
-       st.write(f"\nExamining folder contents: {folder_name}")
+       #st.write(f"\nExamining folder contents: {folder_name}")
        assets = []
        items = self.get_folder_contents(folder_id)
        
@@ -161,7 +161,7 @@ class FrameIOFeedbackExporter:
            name = item.get('name', '')
            item_id = item.get('id')
            
-           st.write(f"Found in folder {folder_name}: {name} (Type: {item_type})")
+           #st.write(f"Found in folder {folder_name}: {name} (Type: {item_type})")
            
            if item_type == 'folder':
                if self.should_process_folder(name):
@@ -171,13 +171,13 @@ class FrameIOFeedbackExporter:
                if name_filter:
                    filter_terms = [term.strip().lower() for term in name_filter.split(',')]
                    if not all(term in name.lower() for term in filter_terms):
-                       st.write(f"Skipping {name} - doesn't match all filters")
+                       #st.write(f"Skipping {name} - doesn't match all filters")
                        continue
-               st.write(f"Adding {name} to assets")
+               #st.write(f"Adding {name} to assets")
                assets.append(item)
        return assets
 
-     
+     @st.cache_data(ttl=3600)
     def get_asset_preview(self, asset_id, asset_details):
         try:
             comments = self.get_asset_comments(asset_id)
@@ -204,14 +204,14 @@ class FrameIOFeedbackExporter:
             st.write(f"Error processing author: {str(e)}")
             return "Unknown User"
 
-     
+     @st.cache_data(ttl=3600)
     def get_asset_comments(self, asset_id):
         try:
             url = f"{self.base_url}/assets/{asset_id}/comments"
             comments = self.make_request(url)
             if comments:
-                st.write(f"Found {len(comments)} comments for asset {asset_id}")
-                st.write("Raw comment data:", json.dumps(comments, indent=2))
+                #st.write(f"Found {len(comments)} comments for asset {asset_id}")
+                #st.write("Raw comment data:", json.dumps(comments, indent=2))
             return comments
         except requests.exceptions.RequestException as e:
             st.error(f"Error fetching comments: {str(e)}")
@@ -247,7 +247,7 @@ class FrameIOFeedbackExporter:
         if not annotations:
             return ""
         
-        st.write(f"Generating SVG for annotations: {json.dumps(annotations, indent=2)}")
+        #st.write(f"Generating SVG for annotations: {json.dumps(annotations, indent=2)}")
         
         def scale_point(point, dimension):
             return (point * 100.0) / dimension
@@ -301,7 +301,7 @@ class FrameIOFeedbackExporter:
         organized_assets.sort(key=lambda x: (x['folder_path'], x['asset'].get('name', '')))
         return organized_assets
 
-     
+     @st.cache_data(ttl=3600)
     def get_all_assets(self, project_id, name_filter=""):
        st.write("Starting to collect all assets...")
        all_assets = []
@@ -310,33 +310,33 @@ class FrameIOFeedbackExporter:
        for review_link in review_links:
            review_link_id = review_link.get('id')
            review_name = review_link.get('name', 'Unnamed review')
-           st.write(f"\nProcessing review link: {review_name}")
+           #st.write(f"\nProcessing review link: {review_name}")
            
            url = f"{self.base_url}/review_links/{review_link_id}/items"
            try:
                items = self.make_request(url)
-               st.write(f"Found {len(items)} items in review link")
+               #st.write(f"Found {len(items)} items in review link")
                
                for item in items:
                    asset_id = item.get('asset_id')
                    if asset_id:
-                       st.write(f"\nChecking asset: {asset_id}")
+                       #st.write(f"\nChecking asset: {asset_id}")
                        asset_details = self.get_item_details(asset_id)
                        if asset_details:
                            asset_name = asset_details.get('name', '')
                            if asset_details.get('type') == 'folder':
-                               st.write(f"Processing folder: {asset_details.get('name')}")
+                               #st.write(f"Processing folder: {asset_details.get('name')}")
                                folder_assets = self.process_folder(asset_id, asset_details.get('name'), name_filter)
                                if folder_assets:
-                                   st.write(f"Adding {len(folder_assets)} assets from folder")
+                                   #st.write(f"Adding {len(folder_assets)} assets from folder")
                                    all_assets.extend(folder_assets)
                            else:
                                if name_filter:
                                    filter_terms = [term.strip().lower() for term in name_filter.split(',')]
                                    if not all(term in asset_name.lower() for term in filter_terms):
-                                       st.write(f"Skipping asset: {asset_name} (doesn't match all filters)")
+                                       #st.write(f"Skipping asset: {asset_name} (doesn't match all filters)")
                                        continue
-                               st.write("Adding single asset")
+                               #st.write("Adding single asset")
                                all_assets.append(asset_details)
            except requests.exceptions.RequestException as e:
                st.error(f"Error processing review link: {str(e)}")
@@ -344,7 +344,7 @@ class FrameIOFeedbackExporter:
        st.write(f"\nTotal assets found: {len(all_assets)}")
        return all_assets
 
-     
+     @st.cache_data(ttl=3600)
     def get_comment_color(self, comment_index):
         """Generate a consistent color for comments"""
         colors = [
