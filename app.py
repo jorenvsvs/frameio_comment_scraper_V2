@@ -60,7 +60,7 @@ class FrameIOFeedbackExporter:
         except:
             return [], set()
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_teams(self):
         try:
             return self.make_request(f"{self.base_url}/teams")
@@ -68,7 +68,7 @@ class FrameIOFeedbackExporter:
             st.error(f"Error fetching teams: {str(e)}")
             return []
             
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_team_projects(self, team_id):
         try:
             return self.make_request(f"{self.base_url}/teams/{team_id}/projects")
@@ -76,7 +76,7 @@ class FrameIOFeedbackExporter:
             st.error(f"Error fetching team projects: {str(e)}")
             return []
             
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_review_links(self, project_id):
         try:
             review_links = self.make_request(f"{self.base_url}/projects/{project_id}/review_links")
@@ -91,7 +91,7 @@ class FrameIOFeedbackExporter:
             return False
         return True
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_folder_path(self, asset, folders=None):
         """Get the full folder path for an asset"""
         parent_id = asset.get('parent_id')
@@ -112,7 +112,7 @@ class FrameIOFeedbackExporter:
             st.write(f"Error getting folder path: {str(e)}")
         return "/"
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_item_details(self, item_id):
         try:
             item_details = self.make_request(f"{self.base_url}/assets/{item_id}")
@@ -122,7 +122,7 @@ class FrameIOFeedbackExporter:
             st.error(f"Error fetching item details: {str(e)}")
             return None
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_folder_contents(self, folder_id):
         #st.write(f"Getting contents of folder {folder_id}")
         endpoints = [
@@ -177,7 +177,7 @@ class FrameIOFeedbackExporter:
                assets.append(item)
        return assets
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_asset_preview(self, asset_id, asset_details):
         try:
             comments = self.get_asset_comments(asset_id)
@@ -204,7 +204,7 @@ class FrameIOFeedbackExporter:
             st.write(f"Error processing author: {str(e)}")
             return "Unknown User"
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_asset_comments(self, asset_id):
         try:
             url = f"{self.base_url}/assets/{asset_id}/comments"
@@ -301,7 +301,7 @@ class FrameIOFeedbackExporter:
         organized_assets.sort(key=lambda x: (x['folder_path'], x['asset'].get('name', '')))
         return organized_assets
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_all_assets(self, project_id, name_filter=""):
        st.write("Starting to collect all assets...")
        all_assets = []
@@ -344,7 +344,7 @@ class FrameIOFeedbackExporter:
        st.write(f"\nTotal assets found: {len(all_assets)}")
        return all_assets
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=3600, hash_funcs={FrameIOFeedbackExporter: lambda _: None})
     def get_comment_color(self, comment_index):
         """Generate a consistent color for comments"""
         colors = [
