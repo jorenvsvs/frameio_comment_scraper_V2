@@ -8,6 +8,10 @@ import time
 import pickle
 import os
 
+st.set_page_config(page_title="Frame.io Feedback Exporter", page_icon="📋", layout="wide")
+st.cache_data.clear()
+st.cache_resource.clear()
+
 class FrameIOFeedbackExporter:
     
     def __init__(self, token, include_old_folders=False):
@@ -670,13 +674,11 @@ class FrameIOFeedbackExporter:
         )
 
 def main():
-    st.set_page_config(page_title="Frame.io Feedback Exporter", page_icon="📋", layout="wide")
+
     
     st.sidebar.title("Frame.io Feedback Exporter")
     st.sidebar.write("Generate a comprehensive report of Frame.io comments.")
 
-    st.cache_data.clear()
-    st.cache_resource.clear()
     
     include_old_folders = st.sidebar.checkbox('Include "old" folders', value=False)
     asset_name_filter = st.sidebar.text_input("Filter assets by name (separate multiple terms with commas)")
