@@ -145,27 +145,21 @@ class FrameIOFeedbackExporter:
         items = self.get_folder_contents(folder_id)
         
         for item in items:
-            if name_filter and name_filter.lower() not in item.get('name', '').lower():
-                continue
-                
             item_type = item.get('type', '')
-            name = item.get('name', 'Unnamed')
+            name = item.get('name', '')
             item_id = item.get('id')
             
-            st.write(f"Examining item: {name} ({item_type})")
-            
+            if name_filter and name_filter.lower() not in name.lower():
+                st.write(f"Skipping item in folder: {name}")
+                continue
+                
             if item_type == 'folder':
                 if self.should_process_folder(name):
-                    st.write(f"Found subfolder: {name}")
-                    subfolder_assets = self.process_folder(item_id, name)
+                    subfolder_assets = self.process_folder(item_id, name, name_filter)
                     assets.extend(subfolder_assets)
-                else:
-                    st.write(f"Skipping subfolder: {name}")
-            elif item_type in ['file', 'version_stack', 'video', 'image', 'pdf', 'audio', 'review', 'asset']:
-                st.write(f"Found asset: {name} ({item_type})")
+            else:
                 assets.append(item)
         
-        st.write(f"Found {len(assets)} assets in folder {folder_name}")
         return assets
 
     def get_asset_preview(self, asset_id, asset_details):
