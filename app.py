@@ -675,7 +675,6 @@ def main():
     st.sidebar.title("Frame.io Feedback Exporter")
     st.sidebar.write("Generate a comprehensive report of Frame.io comments.")
 
-    st.set_page_config(page_title="Frame.io Feedback Exporter", page_icon="📋", layout="wide")
     st.cache_data.clear()
     st.cache_resource.clear()
     
