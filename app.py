@@ -110,7 +110,6 @@ class FrameIOFeedbackExporter:
                 return full_path
         except Exception as e:
             st.write(f"Error getting folder path: {str(e)}")
-        
         return "/"
 
      
@@ -176,7 +175,6 @@ class FrameIOFeedbackExporter:
                        continue
                st.write(f"Adding {name} to assets")
                assets.append(item)
-       
        return assets
 
      
