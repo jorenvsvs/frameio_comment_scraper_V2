@@ -285,44 +285,44 @@ class FrameIOFeedbackExporter:
         return organized_assets
 
     def get_all_assets(self, project_id, name_filter=""):
-        all_assets = []
-        review_links = self.get_review_links(project_id)
-        
-        for review_link in review_links:
-            review_link_id = review_link.get('id')
-            review_name = review_link.get('name', 'Unnamed review')
-            st.write(f"\nProcessing review link: {review_name}")
-            
-            url = f"{self.base_url}/review_links/{review_link_id}/items"
-            try:
-                items = self.make_request(url)
-                st.write(f"Found {len(items)} items in review link")
-                
-                for item in items:
-                    asset_id = item.get('asset_id')
-                    if asset_id:
-                        st.write(f"\nChecking asset: {asset_id}")
-                        asset_details = self.get_item_details(asset_id)
-                        if asset_details:
-                            asset_name = asset_details.get('name', '')
-                            if name_filter and name_filter.lower() not in asset_name.lower():
-                                st.write(f"Skipping asset: {asset_name} (doesn't match filter: {name_filter})")
-                                continue
-                                
-                            if asset_details.get('type') == 'folder':
-                                st.write(f"Processing folder: {asset_details.get('name')}")
-                                folder_assets = self.process_folder(asset_id, asset_details.get('name'), name_filter)
-                                if folder_assets:
-                                    st.write(f"Adding {len(folder_assets)} assets from folder")
-                                    all_assets.extend(folder_assets)
-                            else:
-                                st.write("Adding single asset")
-                                all_assets.append(asset_details)
-            except requests.exceptions.RequestException as e:
-                st.error(f"Error processing review link: {str(e)}")
-        
-        st.write(f"\nTotal assets found: {len(all_assets)}")
-        return all_assets
+       st.write("Starting to collect all assets...")
+       all_assets = []
+       review_links = self.get_review_links(project_id)
+       
+       for review_link in review_links:
+           review_link_id = review_link.get('id')
+           review_name = review_link.get('name', 'Unnamed review')
+           st.write(f"\nProcessing review link: {review_name}")
+           
+           url = f"{self.base_url}/review_links/{review_link_id}/items"
+           try:
+               items = self.make_request(url)
+               st.write(f"Found {len(items)} items in review link")
+               
+               for item in items:
+                   asset_id = item.get('asset_id')
+                   if asset_id:
+                       st.write(f"\nChecking asset: {asset_id}")
+                       asset_details = self.get_item_details(asset_id)
+                       if asset_details:
+                           asset_name = asset_details.get('name', '')
+                           if asset_details.get('type') == 'folder':
+                               st.write(f"Processing folder: {asset_details.get('name')}")
+                               folder_assets = self.process_folder(asset_id, asset_details.get('name'), name_filter)
+                               if folder_assets:
+                                   st.write(f"Adding {len(folder_assets)} assets from folder")
+                                   all_assets.extend(folder_assets)
+                           else:
+                               if name_filter and name_filter.lower() not in asset_name.lower():
+                                   st.write(f"Skipping asset: {asset_name} (doesn't match filter)")
+                                   continue
+                               st.write("Adding single asset")
+                               all_assets.append(asset_details)
+           except requests.exceptions.RequestException as e:
+               st.error(f"Error processing review link: {str(e)}")
+       
+       st.write(f"\nTotal assets found: {len(all_assets)}")
+       return all_assets
 
     def get_comment_color(self, comment_index):
         """Generate a consistent color for comments"""
